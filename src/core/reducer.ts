@@ -1,5 +1,6 @@
 import type { GameState, Action } from '../shared/types'
 import { getReachableCells } from './movement'
+import { getSpell, tryApplySpell } from './spells'
 
 /**
  * Machine à états du jeu : prend un état + une action, retourne le nouvel état.
@@ -16,8 +17,13 @@ export function applyAction(state: GameState, action: Action): GameState {
     case 'END_TURN':
       return state  // Phase 2
 
-    case 'USE_SPELL':
-      return state  // Phase 2
+    case 'USE_SPELL': {
+      if (action.entityId !== state.currentEntityId) return state
+      const spell = getSpell(action.spellId)
+      if (!spell) return state
+      const result = tryApplySpell(state, action.entityId, spell, action.target)
+      return result.valid ? result.nextState : state
+    }
 
     default: {
       // Garde-fou de compilation : si un nouveau type d'Action est ajouté au

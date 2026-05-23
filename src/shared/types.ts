@@ -76,3 +76,22 @@ export type Action =
   | { type: 'MOVE';      entityId: string; to: Position }
   | { type: 'END_TURN';  entityId: string }
   | { type: 'USE_SPELL'; entityId: string; spellId: string; target: Position }
+
+// ---------------------------------------------------------------------------
+// Sorts
+// ---------------------------------------------------------------------------
+
+/** Un effet de sort (union discriminée, extensible). */
+export type DamageEffect = { type: 'damage'; value: number }
+export type SpellEffect   = DamageEffect
+// À venir : HealEffect | PushEffect | BuffEffect | ...
+
+/** Définition statique d'un sort, chargée depuis data/spells/*.json. */
+export type Spell = {
+  id:               string
+  name:             string
+  apCost:           number
+  range:            { min: number; max: number }
+  needsLineOfSight: boolean
+  effects:          SpellEffect[]
+}
