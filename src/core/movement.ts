@@ -6,6 +6,13 @@ function posKey(pos: Position): string {
   return `${pos.x},${pos.y}`
 }
 
+/** Une case atteignable et le nombre de PM nécessaires pour y arriver. */
+export type ReachableCell = {
+  cell: Cell
+  /** Nombre de PM dépensés sur le chemin BFS optimal. */
+  cost: number
+}
+
 /**
  * Retourne toutes les cases que `mover` peut atteindre avec `mp` points de mouvement.
  *
@@ -21,7 +28,7 @@ export function getReachableCells(
   mover: Entity,
   entities: Entity[],
   mp: number,
-): Cell[] {
+): ReachableCell[] {
   // Positions des ennemis : bloquent le passage.
   const enemyPos = new Set(
     entities
@@ -37,20 +44,18 @@ export function getReachableCells(
   )
 
   // --- BFS ---
-  // `visited` stocke la clé de chaque case déjà ajoutée à la queue,
-  // ce qui garantit qu'on ne la traite pas deux fois.
   const visited = new Set<string>([posKey(mover.position)])
   const queue: Array<{ pos: Position; steps: number }> = [
     { pos: mover.position, steps: 0 },
   ]
-  const reachable: Cell[] = []
+  const reachable: ReachableCell[] = []
 
   while (queue.length > 0) {
     const { pos, steps } = queue.shift()!
 
     // Destination valide : pas le départ, pas occupée.
     if (steps > 0 && !occupiedPos.has(posKey(pos))) {
-      reachable.push(grid[pos.y]![pos.x]!)
+      reachable.push({ cell: grid[pos.y]![pos.x]!, cost: steps })
     }
 
     // Plus de PM : on n'explore pas les voisins de cette case.
@@ -58,7 +63,7 @@ export function getReachableCells(
 
     for (const neighbor of getNeighbors(grid, pos)) {
       const key = posKey(neighbor.position)
-      if (enemyPos.has(key)) continue  // ennemi : passage interdit
+      if (enemyPos.has(key)) continue
       if (visited.has(key)) continue
       visited.add(key)
       queue.push({ pos: neighbor.position, steps: steps + 1 })

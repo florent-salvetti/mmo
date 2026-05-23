@@ -27,6 +27,25 @@ export function gridToScreen(pos: Position, origin: ScreenPos): ScreenPos {
 }
 
 /**
+ * Convertit des coordonnées pixel en position de grille.
+ * C'est l'inverse exact de gridToScreen — résolution du système :
+ *   dx = (screenX - originX) / halfW  →  dx = x - y
+ *   dy = (screenY - originY) / halfH  →  dy = x + y
+ *   ⟹  x = (dx + dy) / 2,  y = (dy - dx) / 2
+ * Math.round arrondit au losange le plus proche du pointeur.
+ */
+export function screenToGrid(screen: ScreenPos, origin: ScreenPos): Position {
+  const halfW = TILE_WIDTH  / 2
+  const halfH = TILE_HEIGHT / 2
+  const dx = (screen.screenX - origin.screenX) / halfW
+  const dy = (screen.screenY - origin.screenY) / halfH
+  return {
+    x: Math.round((dx + dy) / 2),
+    y: Math.round((dy - dx) / 2),
+  }
+}
+
+/**
  * Calcule l'origine (case 0,0 → pixel) pour centrer une grille dans un canvas.
  * L'origine est le sommet du losange (0,0), pas le centre de la grille.
  */

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { getReachableCells } from './movement'
+import { getReachableCells, type ReachableCell } from './movement'
 import type { Cell, Entity } from '../shared/types'
 
 // ---------------------------------------------------------------------------
@@ -31,8 +31,8 @@ function makeEntity(
   }
 }
 
-function positions(cells: Cell[]): string[] {
-  return cells.map(c => `${c.position.x},${c.position.y}`)
+function positions(results: ReachableCell[]): string[] {
+  return results.map(r => `${r.cell.position.x},${r.cell.position.y}`)
 }
 
 // ---------------------------------------------------------------------------
@@ -145,6 +145,25 @@ describe('getReachableCells', () => {
     const e2    = makeEntity('e2', 0, 1, 'enemy')
     const pos   = positions(getReachableCells(grid, mover, [e1, e2], 5))
     expect(pos).toHaveLength(0)  // totalement encerclé par des ennemis
+  })
+
+  it('expose le coût réel en nombre de pas BFS', () => {
+    const grid  = makeGrid(5, 1)
+    const mover = makeEntity('m', 0, 0, 'player')
+    const results = getReachableCells(grid, mover, [], 3)
+    const at = (x: number) => results.find(r => r.cell.position.x === x && r.cell.position.y === 0)
+    expect(at(1)?.cost).toBe(1)
+    expect(at(2)?.cost).toBe(2)
+    expect(at(3)?.cost).toBe(3)
+  })
+
+  it('le coût reflète le chemin réel, pas la distance à vol d\'oiseau', () => {
+    // (2,0) est à distance Manhattan 2 de (0,0), mais le chemin de contournement coûte 6
+    const grid = makeGrid(3, 3, ['1,0', '1,1'])
+    const mover = makeEntity('m', 0, 0, 'player')
+    const results = getReachableCells(grid, mover, [], 6)
+    const r = results.find(r => r.cell.position.x === 2 && r.cell.position.y === 0)
+    expect(r?.cost).toBe(6)
   })
 
   it('contourne les obstacles pour atteindre une case', () => {
