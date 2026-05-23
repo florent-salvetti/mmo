@@ -18,10 +18,10 @@ tactique, donc on attaque par là.
 
 ## 2. Les 4 phases
 
-**Phase 1 — Moteur de combat (solo, local).**
+**Phase 1 — Moteur de combat (solo, local).** ✅ TERMINÉE (13 tâches, 122 tests)
 Grille isométrique, un perso, PA/PM, un ou deux sorts, un ennemi avec IA
 basique. But : taper un monstre doit être satisfaisant. 100% testable sans
-réseau. *C'est la phase où on est, tout le reste attend.*
+réseau.
 
 **Phase 2 — Éditeur de map.**
 Génération de niveaux en JSON propre. Le moteur de Phase 1 les charge.
@@ -140,44 +140,73 @@ La structure "liste d'effets" est faite pour grossir sans casser l'existant.
 
 ---
 
-## 7. Plan de tâches Phase 1 (à donner à Claude Code, une par une)
+## 7. Plan de tâches Phase 1 ✅ TERMINÉE
 
-Découpage volontairement fin (profil TS débutant). Chaque tâche = une demande,
-puis explication du code par Claude Code, puis on valide, puis on passe à la
-suivante.
+13 tâches réalisées, 122 tests Vitest passent.
 
-1. **Setup projet.** Vite + TypeScript strict + Vitest. Le `CLAUDE.md` est lu.
+1. ✅ **Setup projet.** Vite + TypeScript strict + Vitest. Le `CLAUDE.md` est lu.
    Un "hello canvas" qui affiche un rectangle, juste pour valider la chaîne.
 
-2. **Types partagés.** Définir dans `shared/types.ts` : `Cell`, `Entity`,
+2. ✅ **Types partagés.** Définir dans `shared/types.ts` : `Cell`, `Entity`,
    `GameState`, `Action`. C'est le vocabulaire du jeu.
 
-3. **Grille (`core/grid.ts`).** Représenter la grille, calculer voisins et
+3. ✅ **Grille (`core/grid.ts`).** Représenter la grille, calculer voisins et
    distance entre deux cases. + tests.
 
-4. **Rendu isométrique vide (`client/render`).** Afficher la grille en iso à
+4. ✅ **Rendu isométrique vide (`client/render`).** Afficher la grille en iso à
    l'écran (juste les losanges des cases). Pas encore d'interaction.
 
-5. **Déplacement (`core/movement.ts`).** Calculer les cases atteignables avec
+5. ✅ **Déplacement (`core/movement.ts`).** Calculer les cases atteignables avec
    N points de mouvement, en contournant les obstacles. + tests.
 
-6. **Clic pour bouger (`client/input`).** Clic sur une case atteignable ->
+6. ✅ **Clic pour bouger (`client/input`).** Clic sur une case atteignable ->
    l'entité s'y déplace, PM décrémentés. Première vraie interaction.
 
-7. **Ligne de vue (`core/lineOfSight.ts`).** Dire si une case en voit une
-   autre. + tests.
+7. ✅ **Ligne de vue (`core/lineOfSight.ts`).** Algorithme de Bresenham pour
+   déterminer si une case en voit une autre. + tests.
 
-8. **Sorts (`core/spells.ts`).** Charger le sort depuis JSON, vérifier portée
+8. ✅ **Sorts (`core/spells.ts`).** Charger le sort depuis JSON, vérifier portée
    + LdV + PA, appliquer les dégâts. + tests.
 
-9. **Tours (`core/turn.ts`).** Fin de tour, reset des PA/PM, alternance
-   joueur / ennemi.
+9. ✅ **Reducer (`core/reducer.ts`).** Machine à états `(état, action) -> nouvel état`.
+   Action MOVE avec validation BFS. + tests.
 
-10. **IA basique de l'ennemi.** L'ennemi s'approche et tape si à portée.
-    Bidon mais suffisant pour que le combat existe.
+10. ✅ **Interface sorts.** Sélection du sort dans le client, affichage des cases
+    à portée (couleur distincte), clic sur ennemi -> USE_SPELL. Barres de PV
+    au-dessus des entités.
 
-11. **Boucle de victoire/défaite.** PV à 0 -> fin de combat. On a un combat
-    jouable complet de bout en bout. **Fin de Phase 1.**
+11. ✅ **Gestion des tours (`END_TURN`).** Passe au combattant suivant, restaure
+    PA/PM au début de chaque tour, incrémente le compteur de rounds. + tests.
+
+12. ✅ **IA basique (`core/ai.ts`).** Fonction pure : attaquer si joueur à portée,
+    sinon se rapprocher, sinon END_TURN. Le client joue les actions IA en boucle
+    avec un délai visible. + tests.
+
+13. ✅ **Mort et fin de combat.** Entités à 0 PV sautées dans l'ordre des tours.
+    Statut de combat (`ongoing` / `victory` / `defeat`) calculé dans le core après
+    chaque USE_SPELL. Overlay victoire/défaite côté client. + tests.
+
+---
+
+## 7b. Points à trancher en Phase 2
+
+Questions laissées ouvertes à la fin de Phase 1, à décider avant ou pendant Phase 2 :
+
+1. **Comportement des entités mortes sur la grille.** Actuellement, une entité à
+   0 PV reste dans `entities` et continue à bloquer les cases de déplacement et
+   à occuper l'espace pour la LdV. Faut-il la retirer de la grille à sa mort,
+   ou laisser son "corps" comme obstacle ? À trancher selon l'angle gameplay voulu.
+
+2. **Bresenham et les coins de murs en diagonale.** L'algorithme de ligne de vue
+   actuel peut laisser passer le regard à travers le coin partagé de deux murs
+   disposés en diagonale (cas limite connu). Ce n'est pas bloquant en Phase 1
+   mais peut créer des situations d'équilibrage inattendues en Phase 2 quand les
+   maps seront plus complexes. À revoir si l'équilibrage le demande.
+
+3. **Validation des JSON de sorts au chargement.** Les sorts sont importés via
+   un `as unknown as Spell` (cast forcé). Un JSON mal formé ou une faute de
+   frappe dans `effects[].type` ne serait détecté qu'à l'exécution. À sécuriser
+   avec une fonction de validation (ou Zod) quand le nombre de sorts augmentera.
 
 ---
 
