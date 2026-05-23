@@ -51,8 +51,9 @@ type UIMode = 'move' | 'spell'
 
 const PLAYER_SPELL_ID = 'coup-epee'
 
-// Zone du bouton sort dans le canvas (coordonnées pixels).
-const SPELL_BTN = { x: 16, y: 56, w: 152, h: 22 }
+// Zones des boutons dans le canvas (coordonnées pixels).
+const SPELL_BTN    = { x:  16, y: 56, w: 152, h: 22 }
+const END_TURN_BTN = { x: 176, y: 56, w: 100, h: 22 }
 
 let mode:       UIMode          = 'move'
 let hoveredPos: Position | null = null
@@ -134,6 +135,16 @@ function renderHUD(ctx: CanvasRenderingContext2D, entity: Entity): void {
   ctx.font      = '11px monospace'
   ctx.fillText("Coup d'epee (3 PA)", SPELL_BTN.x + 6, SPELL_BTN.y + 6)
 
+  // Bouton "Fin de tour"
+  ctx.fillStyle   = '#1e1020'
+  ctx.fillRect(END_TURN_BTN.x, END_TURN_BTN.y, END_TURN_BTN.w, END_TURN_BTN.h)
+  ctx.strokeStyle = '#c77dff'
+  ctx.lineWidth   = 1.5
+  ctx.strokeRect(END_TURN_BTN.x, END_TURN_BTN.y, END_TURN_BTN.w, END_TURN_BTN.h)
+  ctx.fillStyle = '#c77dff'
+  ctx.font      = '11px monospace'
+  ctx.fillText('Fin de tour', END_TURN_BTN.x + 8, END_TURN_BTN.y + 6)
+
   // Texte d'aide contextuel
   const spell  = getSpell(PLAYER_SPELL_ID)
   const canCast = spell !== undefined && entity.ap >= spell.apCost
@@ -176,6 +187,19 @@ canvas.addEventListener('click', (e) => {
     clickY >= SPELL_BTN.y && clickY <= SPELL_BTN.y + SPELL_BTN.h
   ) {
     mode = mode === 'spell' ? 'move' : 'spell'
+    render()
+    return
+  }
+
+  // Clic sur le bouton "Fin de tour" ?
+  if (
+    clickX >= END_TURN_BTN.x && clickX <= END_TURN_BTN.x + END_TURN_BTN.w &&
+    clickY >= END_TURN_BTN.y && clickY <= END_TURN_BTN.y + END_TURN_BTN.h
+  ) {
+    gameState = applyAction(gameState, { type: 'END_TURN', entityId: gameState.currentEntityId })
+    mode = 'move'
+    refreshReachable()
+    refreshSpellRange()
     render()
     return
   }

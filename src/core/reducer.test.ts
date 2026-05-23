@@ -128,9 +128,70 @@ describe('applyAction — MOVE', () => {
 // ---------------------------------------------------------------------------
 
 describe('applyAction — END_TURN', () => {
-  it('retourne l\'état inchangé (non implémenté)', () => {
-    const state = makeState([makeEntity('p', 0, 0)])
-    expect(applyAction(state, { type: 'END_TURN', entityId: 'p' })).toBe(state)
+  it('passe au combattant suivant dans l\'ordre du tableau', () => {
+    const p1    = makeEntity('p1', 0, 0)
+    const p2    = makeEntity('p2', 1, 0)
+    const state = makeState([p1, p2], { currentEntityId: 'p1' })
+    const next  = applyAction(state, { type: 'END_TURN', entityId: 'p1' })
+    expect(next.currentEntityId).toBe('p2')
+  })
+
+  it('restaure les PA et PM de l\'entité dont le tour commence', () => {
+    const p1 = makeEntity('p1', 0, 0)  // maxAp=6, maxMp=3
+    // p2 a dépensé des ressources
+    const p2 = { ...makeEntity('p2', 1, 0), ap: 2, mp: 1 }
+    const state = makeState([p1, p2], { currentEntityId: 'p1' })
+    const next  = applyAction(state, { type: 'END_TURN', entityId: 'p1' })
+    const p2After = next.entities.find(e => e.id === 'p2')!
+    expect(p2After.ap).toBe(6)  // restauré à maxAp
+    expect(p2After.mp).toBe(3)  // restauré à maxMp
+  })
+
+  it('ne modifie pas les PA/PM de l\'entité qui vient de finir son tour', () => {
+    const p1 = { ...makeEntity('p1', 0, 0), ap: 3, mp: 1 }  // p1 a dépensé
+    const p2 = makeEntity('p2', 1, 0)
+    const state = makeState([p1, p2], { currentEntityId: 'p1' })
+    const next  = applyAction(state, { type: 'END_TURN', entityId: 'p1' })
+    const p1After = next.entities.find(e => e.id === 'p1')!
+    expect(p1After.ap).toBe(3)  // inchangé
+    expect(p1After.mp).toBe(1)  // inchangé
+  })
+
+  it('boucle au premier combattant après le dernier', () => {
+    const p1    = makeEntity('p1', 0, 0)
+    const p2    = makeEntity('p2', 1, 0)
+    const state = makeState([p1, p2], { currentEntityId: 'p2' })
+    const next  = applyAction(state, { type: 'END_TURN', entityId: 'p2' })
+    expect(next.currentEntityId).toBe('p1')
+  })
+
+  it('incrémente le numéro de tour quand on revient au premier combattant', () => {
+    const p1    = makeEntity('p1', 0, 0)
+    const p2    = makeEntity('p2', 1, 0)
+    const state = makeState([p1, p2], { currentEntityId: 'p2', turn: 1 })
+    const next  = applyAction(state, { type: 'END_TURN', entityId: 'p2' })
+    expect(next.turn).toBe(2)
+  })
+
+  it('ne change pas le tour si on n\'est pas encore au dernier combattant', () => {
+    const p1    = makeEntity('p1', 0, 0)
+    const p2    = makeEntity('p2', 1, 0)
+    const state = makeState([p1, p2], { currentEntityId: 'p1', turn: 1 })
+    const next  = applyAction(state, { type: 'END_TURN', entityId: 'p1' })
+    expect(next.turn).toBe(1)
+  })
+
+  it('retourne l\'état inchangé si ce n\'est pas le tour de cette entité', () => {
+    const p1    = makeEntity('p1', 0, 0)
+    const p2    = makeEntity('p2', 1, 0)
+    const state = makeState([p1, p2], { currentEntityId: 'p1' })
+    expect(applyAction(state, { type: 'END_TURN', entityId: 'p2' })).toBe(state)
+  })
+
+  it('ne modifie pas la grille', () => {
+    const state = makeState([makeEntity('p1', 0, 0), makeEntity('p2', 1, 0)])
+    const next  = applyAction(state, { type: 'END_TURN', entityId: 'p1' })
+    expect(next.grid).toBe(state.grid)
   })
 })
 

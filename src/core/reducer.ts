@@ -14,8 +14,21 @@ export function applyAction(state: GameState, action: Action): GameState {
       if (action.entityId !== state.currentEntityId) return state
       return applyMove(state, action)
 
-    case 'END_TURN':
-      return state  // Phase 2
+    case 'END_TURN': {
+      if (action.entityId !== state.currentEntityId) return state
+      const idx  = state.entities.findIndex(e => e.id === state.currentEntityId)
+      const next = (idx + 1) % state.entities.length
+      const nextId = state.entities[next]!.id
+      return {
+        ...state,
+        entities: state.entities.map(e =>
+          e.id === nextId ? { ...e, ap: e.maxAp, mp: e.maxMp } : e,
+        ),
+        currentEntityId: nextId,
+        // Le numéro de tour monte quand on revient au premier combattant.
+        turn: next === 0 ? state.turn + 1 : state.turn,
+      }
+    }
 
     case 'USE_SPELL': {
       if (action.entityId !== state.currentEntityId) return state
