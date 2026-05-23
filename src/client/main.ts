@@ -3,6 +3,7 @@ import { getReachableCells } from '../core/movement'
 import { getSpell, getSpellTargetCells } from '../core/spells'
 import { getCell } from '../core/grid'
 import { applyAction } from '../core/reducer'
+import { getAIAction } from '../core/ai'
 import { renderGrid, renderHighlights, renderSpellRange, renderEntities } from './render/gridRenderer'
 import { computeOrigin, screenToGrid } from './render/projection'
 
@@ -27,7 +28,7 @@ let gameState: GameState = {
     { id: 'player-1', name: 'Kirito', team: 'player',
       position: { x: 1, y: 1 }, hp: 100, maxHp: 100, ap: 6, maxAp: 6, mp: 3, maxMp: 3 },
     { id: 'enemy-1', name: 'Mob A', team: 'enemy',
-      position: { x: 2, y: 1 }, hp: 40, maxHp: 40, ap: 4, maxAp: 4, mp: 2, maxMp: 2 },
+      position: { x: 4, y: 1 }, hp: 40, maxHp: 40, ap: 4, maxAp: 4, mp: 2, maxMp: 2 },
     { id: 'enemy-2', name: 'Mob B', team: 'enemy',
       position: { x: 5, y: 7 }, hp: 40, maxHp: 40, ap: 4, maxAp: 4, mp: 2, maxMp: 2 },
   ],
@@ -50,18 +51,24 @@ const origin = computeOrigin(GRID_W, GRID_H, canvas)
 type UIMode = 'move' | 'spell'
 
 const PLAYER_SPELL_ID = 'coup-epee'
+const AI_STEP_DELAY_MS = 500  // pause entre chaque action IA (visible à l'écran)
 
 // Zones des boutons dans le canvas (coordonnées pixels).
 const SPELL_BTN    = { x:  16, y: 56, w: 152, h: 22 }
 const END_TURN_BTN = { x: 176, y: 56, w: 100, h: 22 }
 
-let mode:       UIMode          = 'move'
-let hoveredPos: Position | null = null
-let reachable:  Cell[]          = []
-let spellRange: Cell[]          = []
+let mode:          UIMode          = 'move'
+let hoveredPos:    Position | null = null
+let reachable:     Cell[]          = []
+let spellRange:    Cell[]          = []
+let aiTurnActive:  boolean         = false
 
 function currentEntity(): Entity {
   return gameState.entities.find(e => e.id === gameState.currentEntityId)!
+}
+
+function isCurrentEntityEnemy(): boolean {
+  return currentEntity().team === 'enemy'
 }
 
 function refreshReachable(): void {
@@ -77,6 +84,39 @@ function refreshSpellRange(): void {
 }
 
 // ---------------------------------------------------------------------------
+// Boucle IA
+// ---------------------------------------------------------------------------
+
+function runAIStep(): void {
+  const action = getAIAction(gameState, gameState.currentEntityId)
+  gameState = applyAction(gameState, action)
+  refreshReachable()
+  refreshSpellRange()
+  render()
+
+  if (action.type === 'END_TURN') {
+    // La main passe à l'entité suivante.
+    if (isCurrentEntityEnemy()) {
+      // Enchaîne immédiatement sur le tour de l'ennemi suivant.
+      setTimeout(runAIStep, AI_STEP_DELAY_MS)
+    } else {
+      // Retour au joueur : déverrouiller les contrôles.
+      aiTurnActive = false
+      render()  // re-render pour réafficher les surlignages joueur
+    }
+  } else {
+    // L'ennemi peut encore agir : continuer après un délai.
+    setTimeout(runAIStep, AI_STEP_DELAY_MS)
+  }
+}
+
+function startAITurn(): void {
+  aiTurnActive = true
+  render()  // efface les surlignages joueur immédiatement
+  setTimeout(runAIStep, AI_STEP_DELAY_MS)
+}
+
+// ---------------------------------------------------------------------------
 // Rendu
 // ---------------------------------------------------------------------------
 
@@ -86,10 +126,13 @@ function render(): void {
 
   renderGrid(ctx, gameState.grid, origin)
 
-  if (mode === 'move') {
-    renderHighlights(ctx, reachable, origin, hoveredPos)
-  } else {
-    renderSpellRange(ctx, spellRange, origin, hoveredPos)
+  // Les surlignages ne s'affichent que pendant le tour du joueur.
+  if (!aiTurnActive) {
+    if (mode === 'move') {
+      renderHighlights(ctx, reachable, origin, hoveredPos)
+    } else {
+      renderSpellRange(ctx, spellRange, origin, hoveredPos)
+    }
   }
 
   renderEntities(ctx, gameState.entities, origin)
@@ -124,36 +167,40 @@ function renderHUD(ctx: CanvasRenderingContext2D, entity: Entity): void {
   ctx.fillStyle = '#ffffff'
   ctx.fillText(`${entity.ap} / ${entity.maxAp}`, pad + 30 + barW + 8, pad + 19)
 
-  // Bouton sort
+  // Bouton sort (désactivé pendant le tour ennemi)
   const isSpellMode = mode === 'spell'
-  ctx.fillStyle   = isSpellMode ? '#5a2a14' : '#1e2e1e'
+  ctx.fillStyle   = aiTurnActive ? '#141414' : (isSpellMode ? '#5a2a14' : '#1e2e1e')
   ctx.fillRect(SPELL_BTN.x, SPELL_BTN.y, SPELL_BTN.w, SPELL_BTN.h)
-  ctx.strokeStyle = isSpellMode ? '#ff7832' : '#56cfe1'
+  ctx.strokeStyle = aiTurnActive ? '#444444' : (isSpellMode ? '#ff7832' : '#56cfe1')
   ctx.lineWidth   = 1.5
   ctx.strokeRect(SPELL_BTN.x, SPELL_BTN.y, SPELL_BTN.w, SPELL_BTN.h)
-  ctx.fillStyle = isSpellMode ? '#ff9a5c' : '#cccccc'
+  ctx.fillStyle = aiTurnActive ? '#555555' : (isSpellMode ? '#ff9a5c' : '#cccccc')
   ctx.font      = '11px monospace'
   ctx.fillText("Coup d'epee (3 PA)", SPELL_BTN.x + 6, SPELL_BTN.y + 6)
 
-  // Bouton "Fin de tour"
-  ctx.fillStyle   = '#1e1020'
+  // Bouton "Fin de tour" (désactivé pendant le tour ennemi)
+  ctx.fillStyle   = aiTurnActive ? '#141414' : '#1e1020'
   ctx.fillRect(END_TURN_BTN.x, END_TURN_BTN.y, END_TURN_BTN.w, END_TURN_BTN.h)
-  ctx.strokeStyle = '#c77dff'
+  ctx.strokeStyle = aiTurnActive ? '#444444' : '#c77dff'
   ctx.lineWidth   = 1.5
   ctx.strokeRect(END_TURN_BTN.x, END_TURN_BTN.y, END_TURN_BTN.w, END_TURN_BTN.h)
-  ctx.fillStyle = '#c77dff'
+  ctx.fillStyle = aiTurnActive ? '#555555' : '#c77dff'
   ctx.font      = '11px monospace'
   ctx.fillText('Fin de tour', END_TURN_BTN.x + 8, END_TURN_BTN.y + 6)
 
   // Texte d'aide contextuel
-  const spell  = getSpell(PLAYER_SPELL_ID)
-  const canCast = spell !== undefined && entity.ap >= spell.apCost
-  const hint = mode === 'move'
-    ? (entity.mp === 0 ? 'Plus de PM disponibles' : 'Clic case bleue = deplacer')
-    : (canCast ? 'Clic case orange = lancer' : 'PA insuffisants')
   ctx.fillStyle = '#888888'
   ctx.font      = '10px monospace'
-  ctx.fillText(hint, pad, SPELL_BTN.y + SPELL_BTN.h + 6)
+  if (aiTurnActive) {
+    ctx.fillText(`Tour de ${entity.name}...`, pad, SPELL_BTN.y + SPELL_BTN.h + 6)
+  } else {
+    const spell    = getSpell(PLAYER_SPELL_ID)
+    const canCast  = spell !== undefined && entity.ap >= spell.apCost
+    const hint     = mode === 'move'
+      ? (entity.mp === 0 ? 'Plus de PM disponibles' : 'Clic case bleue = deplacer')
+      : (canCast ? 'Clic case orange = lancer' : 'PA insuffisants')
+    ctx.fillText(hint, pad, SPELL_BTN.y + SPELL_BTN.h + 6)
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -161,6 +208,7 @@ function renderHUD(ctx: CanvasRenderingContext2D, entity: Entity): void {
 // ---------------------------------------------------------------------------
 
 canvas.addEventListener('mousemove', (e) => {
+  if (aiTurnActive) return
   const rect   = canvas.getBoundingClientRect()
   const newPos = screenToGrid(
     { screenX: e.clientX - rect.left, screenY: e.clientY - rect.top },
@@ -172,11 +220,14 @@ canvas.addEventListener('mousemove', (e) => {
 })
 
 canvas.addEventListener('mouseleave', () => {
+  if (aiTurnActive) return
   hoveredPos = null
   render()
 })
 
 canvas.addEventListener('click', (e) => {
+  if (aiTurnActive) return  // bloquer les clics pendant le tour ennemi
+
   const rect   = canvas.getBoundingClientRect()
   const clickX = e.clientX - rect.left
   const clickY = e.clientY - rect.top
@@ -191,7 +242,7 @@ canvas.addEventListener('click', (e) => {
     return
   }
 
-  // Clic sur le bouton "Fin de tour" ?
+  // Clic sur le bouton "Fin de tour".
   if (
     clickX >= END_TURN_BTN.x && clickX <= END_TURN_BTN.x + END_TURN_BTN.w &&
     clickY >= END_TURN_BTN.y && clickY <= END_TURN_BTN.y + END_TURN_BTN.h
@@ -201,6 +252,7 @@ canvas.addEventListener('click', (e) => {
     refreshReachable()
     refreshSpellRange()
     render()
+    if (isCurrentEntityEnemy()) startAITurn()
     return
   }
 
