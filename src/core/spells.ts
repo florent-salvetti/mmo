@@ -1,4 +1,4 @@
-import type { GameState, Position, Spell, SpellEffect } from '../shared/types'
+import type { Cell, Entity, GameState, Position, Spell, SpellEffect } from '../shared/types'
 import { manhattanDistance, getCell } from './grid'
 import { hasLineOfSight } from './lineOfSight'
 
@@ -14,6 +14,24 @@ const SPELL_REGISTRY: Record<string, Spell> = {
 /** Retourne la définition d'un sort par son id, ou undefined si inconnu. */
 export function getSpell(id: string): Spell | undefined {
   return SPELL_REGISTRY[id]
+}
+
+/**
+ * Retourne toutes les cases ciblables par un sort depuis la position du lanceur.
+ * Filtre par portée [range.min, range.max] et, si needsLineOfSight, par ligne de vue.
+ * N'exige pas que la case soit walkable : on peut cibler une case occupée par un ennemi.
+ */
+export function getSpellTargetCells(grid: Cell[][], caster: Entity, spell: Spell): Cell[] {
+  const result: Cell[] = []
+  for (const row of grid) {
+    for (const cell of row) {
+      const dist = manhattanDistance(caster.position, cell.position)
+      if (dist < spell.range.min || dist > spell.range.max) continue
+      if (spell.needsLineOfSight && !hasLineOfSight(grid, caster.position, cell.position)) continue
+      result.push(cell)
+    }
+  }
+  return result
 }
 
 // ---------------------------------------------------------------------------

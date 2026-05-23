@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { tryApplySpell, getSpell } from './spells'
+import { tryApplySpell, getSpell, getSpellTargetCells } from './spells'
 import { applyAction } from './reducer'
 import type { Cell, Entity, GameState, Spell } from '../shared/types'
 
@@ -169,6 +169,55 @@ describe('tryApplySpell — effets', () => {
     if (!result.valid) throw new Error('attendu valid')
     expect(result.nextState.grid).toBe(state.grid)
     expect(result.nextState.turn).toBe(state.turn)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Portée : cases ciblables par un sort
+// ---------------------------------------------------------------------------
+
+describe('getSpellTargetCells', () => {
+  it('inclut toutes les cases dans la plage de portée (sans LOS)', () => {
+    // Grille 5×1, lanceur en (2,0). SPELL range [1,3].
+    // Distances : (0,0)=2 (1,0)=1 (2,0)=0 (3,0)=1 (4,0)=2 — tout dans [1,3] sauf (2,0).
+    const caster = makeEntity('p', 2, 0)
+    const grid   = makeGrid(5, 1)
+    const cells  = getSpellTargetCells(grid, caster, SPELL)
+    expect(cells).toHaveLength(4)
+    const pos = cells.map(c => c.position)
+    expect(pos).toContainEqual({ x: 0, y: 0 })
+    expect(pos).toContainEqual({ x: 1, y: 0 })
+    expect(pos).toContainEqual({ x: 3, y: 0 })
+    expect(pos).toContainEqual({ x: 4, y: 0 })
+  })
+
+  it('exclut le lanceur lui-même (dist=0 < range.min) et les cases hors portée max', () => {
+    // Grille 7×1, lanceur en (2,0). (2,0) dist=0, (6,0) dist=4 — tous deux exclus.
+    const caster = makeEntity('p', 2, 0)
+    const pos    = getSpellTargetCells(makeGrid(7, 1), caster, SPELL).map(c => c.position)
+    expect(pos).not.toContainEqual({ x: 2, y: 0 }) // dist=0
+    expect(pos).not.toContainEqual({ x: 6, y: 0 }) // dist=4 > max=3
+  })
+
+  it('LOS requise : les cases derrière un mur sont exclues', () => {
+    // Lanceur (0,0), mur en (1,0). SPELL_LOS range [1,3] + needsLineOfSight.
+    // Bresenham de (0,0) à (2,0) passe par (1,0) → bloqué.
+    const caster = makeEntity('p', 0, 0)
+    const pos    = getSpellTargetCells(makeGrid(5, 1, ['1,0']), caster, SPELL_LOS).map(c => c.position)
+    expect(pos).not.toContainEqual({ x: 2, y: 0 })
+    expect(pos).not.toContainEqual({ x: 3, y: 0 })
+  })
+
+  it('LOS non requise : les cases derrière un mur restent incluses', () => {
+    const caster = makeEntity('p', 0, 0)
+    const pos    = getSpellTargetCells(makeGrid(5, 1, ['1,0']), caster, SPELL).map(c => c.position)
+    expect(pos).toContainEqual({ x: 2, y: 0 })
+  })
+
+  it('retourne un tableau vide si aucune case n\'est dans la portée', () => {
+    // Grille 1×1 avec seulement le lanceur — dist=0 exclu.
+    const caster = makeEntity('p', 0, 0)
+    expect(getSpellTargetCells(makeGrid(1, 1), caster, SPELL)).toHaveLength(0)
   })
 })
 

@@ -51,7 +51,39 @@ export function renderHighlights(
   }
 }
 
-/** Dessine toutes les entités comme des cercles colorés au centre de leur case. */
+/** Dessine les surlignages orange sur les cases ciblables par un sort. */
+export function renderSpellRange(
+  ctx: CanvasRenderingContext2D,
+  cells: Cell[],
+  origin: ScreenPos,
+  hoveredPos: Position | null,
+): void {
+  for (const cell of cells) {
+    const { x, y } = cell.position
+    const isHovered = hoveredPos !== null && hoveredPos.x === x && hoveredPos.y === y
+    const { screenX, screenY } = gridToScreen(cell.position, origin)
+    const halfW = TILE_WIDTH  / 2
+    const halfH = TILE_HEIGHT / 2
+
+    ctx.beginPath()
+    ctx.moveTo(screenX,         screenY - halfH)
+    ctx.lineTo(screenX + halfW, screenY)
+    ctx.lineTo(screenX,         screenY + halfH)
+    ctx.lineTo(screenX - halfW, screenY)
+    ctx.closePath()
+
+    ctx.fillStyle = isHovered ? 'rgba(255, 120, 50, 0.65)' : 'rgba(255, 120, 50, 0.28)'
+    ctx.fill()
+
+    if (isHovered) {
+      ctx.strokeStyle = 'rgba(255, 200, 150, 0.9)'
+      ctx.lineWidth   = 1.5
+      ctx.stroke()
+    }
+  }
+}
+
+/** Dessine toutes les entités comme des cercles colorés avec une barre de PV. */
 export function renderEntities(
   ctx: CanvasRenderingContext2D,
   entities: Entity[],
@@ -63,6 +95,7 @@ export function renderEntities(
     const fill   = entity.team === 'player' ? '#56cfe1' : '#ef233c'
     const stroke = entity.team === 'player' ? '#caf0f8' : '#ffd6d6'
 
+    // Cercle de l'entité
     ctx.beginPath()
     ctx.arc(screenX, screenY, radius, 0, Math.PI * 2)
     ctx.fillStyle   = fill
@@ -70,6 +103,19 @@ export function renderEntities(
     ctx.lineWidth   = 2
     ctx.fill()
     ctx.stroke()
+
+    // Barre de PV au-dessus du cercle
+    const ratio  = entity.hp / entity.maxHp
+    const barW   = 20
+    const barH   = 3
+    const barX   = screenX - barW / 2
+    const barY   = screenY - radius - 6
+    const barClr = ratio > 0.6 ? '#4caf50' : ratio > 0.3 ? '#ffc107' : '#f44336'
+
+    ctx.fillStyle = '#222233'
+    ctx.fillRect(barX, barY, barW, barH)
+    ctx.fillStyle = barClr
+    ctx.fillRect(barX, barY, barW * ratio, barH)
   }
 }
 
