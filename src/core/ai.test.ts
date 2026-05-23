@@ -36,6 +36,7 @@ function makeState(entities: Entity[], grid?: Cell[][]): GameState {
     entities,
     currentEntityId: entities[0]!.id,
     turn: 1,
+    status: 'ongoing',
   }
 }
 

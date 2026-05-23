@@ -49,6 +49,9 @@ export type Entity = {
 // État du jeu
 // ---------------------------------------------------------------------------
 
+/** Résultat du combat : toujours calculé depuis les PV des entités. */
+export type CombatStatus = 'ongoing' | 'victory' | 'defeat'
+
 /**
  * Snapshot complet d'un combat à un instant T.
  * Le core prend cet état + une action et produit un nouvel état.
@@ -61,6 +64,8 @@ export type GameState = {
   /** Id de l'entité dont c'est le tour. */
   currentEntityId: string
   turn: number
+  /** Calculé dans le core après chaque action ; le client ne fait que l'afficher. */
+  status: CombatStatus
 }
 
 // ---------------------------------------------------------------------------

@@ -36,6 +36,7 @@ function makeState(entities: Entity[], overrides: Partial<GameState> = {}): Game
     entities,
     currentEntityId: entities[0]!.id,
     turn: 1,
+    status: 'ongoing',
     ...overrides,
   }
 }
@@ -193,10 +194,77 @@ describe('applyAction — END_TURN', () => {
     const next  = applyAction(state, { type: 'END_TURN', entityId: 'p1' })
     expect(next.grid).toBe(state.grid)
   })
+
+  it('saute les entités mortes (hp=0)', () => {
+    const p1 = makeEntity('p1', 0, 0)
+    const p2 = { ...makeEntity('p2', 1, 0), hp: 0 }  // mort
+    const p3 = makeEntity('p3', 2, 0)
+    const next = applyAction(makeState([p1, p2, p3]), { type: 'END_TURN', entityId: 'p1' })
+    expect(next.currentEntityId).toBe('p3')
+  })
+
+  it('saute plusieurs entités mortes d\'affilée', () => {
+    const p1 = makeEntity('p1', 0, 0)
+    const p2 = { ...makeEntity('p2', 1, 0), hp: 0 }
+    const p3 = { ...makeEntity('p3', 2, 0), hp: 0 }
+    const p4 = makeEntity('p4', 3, 0)
+    const next = applyAction(makeState([p1, p2, p3, p4]), { type: 'END_TURN', entityId: 'p1' })
+    expect(next.currentEntityId).toBe('p4')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Statut du combat
+// ---------------------------------------------------------------------------
+
+describe('applyAction — statut de combat', () => {
+  it('status passe à "victory" quand le dernier ennemi tombe à 0 PV', () => {
+    // makeEntity crée des entités avec hp=10, coup-epee fait 12 dégâts → mort
+    const player = makeEntity('p', 0, 0, 'player')
+    const enemy  = makeEntity('e', 1, 0, 'enemy')
+    const state  = makeState([player, enemy])
+    const next   = applyAction(state, {
+      type: 'USE_SPELL', entityId: 'p', spellId: 'coup-epee', target: { x: 1, y: 0 },
+    })
+    expect(next.status).toBe('victory')
+  })
+
+  it('status passe à "defeat" quand le dernier joueur tombe à 0 PV', () => {
+    const player = makeEntity('p', 1, 0, 'player')
+    const enemy  = makeEntity('e', 0, 0, 'enemy')
+    const state  = makeState([enemy, player], { currentEntityId: 'e' })
+    const next   = applyAction(state, {
+      type: 'USE_SPELL', entityId: 'e', spellId: 'coup-epee', target: { x: 1, y: 0 },
+    })
+    expect(next.status).toBe('defeat')
+  })
+
+  it('status reste "ongoing" tant que les deux camps ont des survivants', () => {
+    const player = { ...makeEntity('p', 0, 0, 'player'), hp: 50, maxHp: 50 }
+    const enemy  = { ...makeEntity('e', 1, 0, 'enemy'),  hp: 50, maxHp: 50 }
+    const state  = makeState([player, enemy])
+    const next   = applyAction(state, {
+      type: 'USE_SPELL', entityId: 'p', spellId: 'coup-epee', target: { x: 1, y: 0 },
+    })
+    expect(next.status).toBe('ongoing')
+  })
+
+  it('aucune action n\'est appliquée si le combat est terminé (victory)', () => {
+    const player = makeEntity('p', 0, 0)
+    const state  = makeState([player], { status: 'victory' })
+    expect(applyAction(state, { type: 'END_TURN', entityId: 'p' })).toBe(state)
+    expect(applyAction(state, { type: 'MOVE', entityId: 'p', to: { x: 1, y: 0 } })).toBe(state)
+  })
+
+  it('aucune action n\'est appliquée si le combat est terminé (defeat)', () => {
+    const enemy = makeEntity('e', 0, 0, 'enemy')
+    const state = makeState([enemy], { status: 'defeat' })
+    expect(applyAction(state, { type: 'END_TURN', entityId: 'e' })).toBe(state)
+  })
 })
 
 describe('applyAction — USE_SPELL', () => {
-  it('retourne l\'état inchangé (non implémenté)', () => {
+  it('retourne l\'état inchangé pour un sort inconnu', () => {
     const state = makeState([makeEntity('p', 0, 0)])
     const action = { type: 'USE_SPELL' as const, entityId: 'p', spellId: 's1', target: { x: 1, y: 0 } }
     expect(applyAction(state, action)).toBe(state)

@@ -34,6 +34,7 @@ let gameState: GameState = {
   ],
   currentEntityId: 'player-1',
   turn: 1,
+  status: 'ongoing',
 }
 
 // ---------------------------------------------------------------------------
@@ -88,24 +89,34 @@ function refreshSpellRange(): void {
 // ---------------------------------------------------------------------------
 
 function runAIStep(): void {
+  // Stopper l'IA si le combat est déjà terminé.
+  if (gameState.status !== 'ongoing') {
+    aiTurnActive = false
+    render()
+    return
+  }
+
   const action = getAIAction(gameState, gameState.currentEntityId)
   gameState = applyAction(gameState, action)
   refreshReachable()
   refreshSpellRange()
   render()
 
+  // Si le coup de l'ennemi a mis fin au combat, arrêter la boucle.
+  if (gameState.status !== 'ongoing') {
+    aiTurnActive = false
+    return
+  }
+
   if (action.type === 'END_TURN') {
-    // La main passe à l'entité suivante.
     if (isCurrentEntityEnemy()) {
-      // Enchaîne immédiatement sur le tour de l'ennemi suivant.
       setTimeout(runAIStep, AI_STEP_DELAY_MS)
     } else {
       // Retour au joueur : déverrouiller les contrôles.
       aiTurnActive = false
-      render()  // re-render pour réafficher les surlignages joueur
+      render()
     }
   } else {
-    // L'ennemi peut encore agir : continuer après un délai.
     setTimeout(runAIStep, AI_STEP_DELAY_MS)
   }
 }
@@ -137,6 +148,31 @@ function render(): void {
 
   renderEntities(ctx, gameState.entities, origin)
   renderHUD(ctx, currentEntity())
+  renderOverlay()
+}
+
+function renderOverlay(): void {
+  if (gameState.status === 'ongoing') return
+
+  // Voile semi-transparent par-dessus la scène.
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.65)'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+  const isVictory = gameState.status === 'victory'
+  ctx.textAlign    = 'center'
+  ctx.textBaseline = 'middle'
+
+  ctx.font      = 'bold 52px monospace'
+  ctx.fillStyle = isVictory ? '#00ff88' : '#ff4455'
+  ctx.fillText(isVictory ? 'Victoire !' : 'Defaite...', canvas.width / 2, canvas.height / 2 - 20)
+
+  ctx.font      = '16px monospace'
+  ctx.fillStyle = '#888888'
+  ctx.fillText('Rechargez la page pour rejouer', canvas.width / 2, canvas.height / 2 + 36)
+
+  // Réinitialiser l'alignement pour les autres draws.
+  ctx.textAlign    = 'left'
+  ctx.textBaseline = 'top'
 }
 
 function renderHUD(ctx: CanvasRenderingContext2D, entity: Entity): void {
