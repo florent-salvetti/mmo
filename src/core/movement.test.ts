@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { getReachableCells, type ReachableCell } from './movement'
+import { getReachableCells, getPathDistances, type ReachableCell } from './movement'
 import type { Cell, Entity } from '../shared/types'
 
 // ---------------------------------------------------------------------------
@@ -181,6 +181,50 @@ describe('getReachableCells', () => {
     expect(pos5).not.toContain('2,0')
     // Avec mp=6 : on atteint (2,0) en ayant contourné les murs
     expect(pos6).toContain('2,0')
+  })
+
+})
+
+// ---------------------------------------------------------------------------
+// getPathDistances
+// ---------------------------------------------------------------------------
+
+describe('getPathDistances', () => {
+
+  it('distance 0 depuis la case de départ', () => {
+    const grid = makeGrid(3, 3)
+    const dists = getPathDistances(grid, { x: 1, y: 1 })
+    expect(dists.get('1,1')).toBe(0)
+  })
+
+  it('distances correctes sur une ligne droite sans obstacle', () => {
+    const grid = makeGrid(5, 1)
+    const dists = getPathDistances(grid, { x: 0, y: 0 })
+    expect(dists.get('1,0')).toBe(1)
+    expect(dists.get('2,0')).toBe(2)
+    expect(dists.get('3,0')).toBe(3)
+    expect(dists.get('4,0')).toBe(4)
+  })
+
+  it('distance réelle plus grande que Manhattan quand un mur force le contournement', () => {
+    // Grille 3×3, murs en (1,0) et (1,1) — Manhattan (0,0)→(2,0) = 2, chemin réel = 6
+    const grid = makeGrid(3, 3, ['1,0', '1,1'])
+    const dists = getPathDistances(grid, { x: 0, y: 0 })
+    expect(dists.get('2,0')).toBe(6)
+  })
+
+  it('une case inaccessible (coupée par les murs) est absente de la Map', () => {
+    // Ligne de 3 cases avec mur au milieu : (0,0) | MUR(1,0) | (2,0)
+    const grid = makeGrid(3, 1, ['1,0'])
+    const dists = getPathDistances(grid, { x: 0, y: 0 })
+    expect(dists.has('2,0')).toBe(false)
+  })
+
+  it('est symétrique : dist(A→B) === dist(B→A)', () => {
+    const grid = makeGrid(3, 3, ['1,0', '1,1'])
+    const fromA = getPathDistances(grid, { x: 0, y: 0 })
+    const fromB = getPathDistances(grid, { x: 2, y: 0 })
+    expect(fromA.get('2,0')).toBe(fromB.get('0,0'))
   })
 
 })

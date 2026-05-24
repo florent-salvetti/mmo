@@ -173,3 +173,31 @@ describe('getAIAction — priorité attaque > déplacement', () => {
     expect(action.type).toBe('USE_SPELL')
   })
 })
+
+// ---------------------------------------------------------------------------
+// Contournement des obstacles (bug Manhattan vs BFS réel)
+// ---------------------------------------------------------------------------
+
+describe('getAIAction — contournement des obstacles', () => {
+  it('contourne un mur plutôt que de rester bloqué (régression bug Manhattan)', () => {
+    // Grille 5×4, murs en (1,1) et (1,2) :
+    //   . . . . .
+    //   E X . . P
+    //   . X . . .
+    //   . . . . .
+    //
+    // Avec Manhattan : aucune case accessible (0,0),(0,2),(1,0),(0,3)
+    //   n'est "plus proche" par Manhattan de P=(4,1) que E=(0,1)
+    //   → ancien code faisait END_TURN (bug : ennemi bloqué)
+    //
+    // Avec BFS réel : (1,0) est à distance 4 du joueur < 6 (position actuelle)
+    //   → l'ennemi doit avancer vers (1,0)
+    const grid   = makeGrid(5, 4, ['1,1', '1,2'])
+    const enemy  = makeEntity('e', 0, 1, 'enemy', 0, 2)  // ap=0, mp=2
+    const player = makeEntity('p', 4, 1)
+    const action = getAIAction(makeState([enemy, player], grid), 'e')
+    expect(action.type).toBe('MOVE')
+    if (action.type !== 'MOVE') return
+    expect(action.to).toEqual({ x: 1, y: 0 })
+  })
+})

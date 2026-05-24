@@ -1,8 +1,12 @@
-import type { Action, Entity, GameState } from '../shared/types'
+import type { Action, Entity, GameState, Position } from '../shared/types'
 import { manhattanDistance } from './grid'
-import { getReachableCells } from './movement'
+import { getReachableCells, getPathDistances } from './movement'
 import { getSpell } from './spells'
 import { hasLineOfSight } from './lineOfSight'
+
+function posKey(pos: Position): string {
+  return `${pos.x},${pos.y}`
+}
 
 // Sort utilisé par tous les ennemis — Phase 1.
 // Chaque ennemi a accès au même sort que le joueur ; la liste par entité viendra plus tard.
@@ -44,19 +48,25 @@ export function getAIAction(state: GameState, entityId: string): Action {
   }
 
   // --- 2. Avancer vers le joueur le plus proche ---
-  const currentDist = manhattanDistance(entity.position, nearest.position)
-  const reachable   = getReachableCells(state.grid, entity, state.entities, entity.mp)
+  const reachable = getReachableCells(state.grid, entity, state.entities, entity.mp)
 
-  // Garde uniquement les cases qui rapprochent réellement l'ennemi.
+  // BFS depuis le joueur : distances réelles sur la topologie de la grille.
+  // On part du joueur (pas de l'ennemi) pour comparer chaque case accessible
+  // à la position actuelle de l'ennemi — même au-delà de sa portée de déplacement.
+  const distFromNearest   = getPathDistances(state.grid, nearest.position)
+  const currentRealDist   = distFromNearest.get(posKey(entity.position)) ?? Infinity
+
+  // Garde uniquement les cases qui rapprochent réellement (coût chemin réel, pas Manhattan).
   const closer = reachable.filter(
-    r => manhattanDistance(r.cell.position, nearest.position) < currentDist,
+    r => (distFromNearest.get(posKey(r.cell.position)) ?? Infinity) < currentRealDist,
   )
 
   if (closer.length > 0) {
-    const best = closer.reduce((b, r) =>
-      manhattanDistance(r.cell.position, nearest.position) <
-      manhattanDistance(b.cell.position, nearest.position) ? r : b,
-    )
+    const best = closer.reduce((b, r) => {
+      const dR = distFromNearest.get(posKey(r.cell.position)) ?? Infinity
+      const dB = distFromNearest.get(posKey(b.cell.position)) ?? Infinity
+      return dR < dB ? r : b
+    })
     return { type: 'MOVE', entityId, to: best.cell.position }
   }
 

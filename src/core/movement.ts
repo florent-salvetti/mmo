@@ -72,3 +72,31 @@ export function getReachableCells(
 
   return reachable
 }
+
+/**
+ * BFS depuis `from` sur la topologie pure de la grille (murs uniquement).
+ * Retourne une Map posKey → distance en pas réels vers chaque case walkable.
+ * N'tient pas compte des entités : donne la distance minimale théorique,
+ * indépendante des positions changeantes des combattants.
+ */
+export function getPathDistances(
+  grid: Cell[][],
+  from: Position,
+): Map<string, number> {
+  const distances = new Map<string, number>()
+  distances.set(posKey(from), 0)
+  const queue: Array<{ pos: Position; dist: number }> = [{ pos: from, dist: 0 }]
+
+  while (queue.length > 0) {
+    const { pos, dist } = queue.shift()!
+    for (const neighbor of getNeighbors(grid, pos)) {
+      const key = posKey(neighbor.position)
+      if (!distances.has(key)) {
+        distances.set(key, dist + 1)
+        queue.push({ pos: neighbor.position, dist: dist + 1 })
+      }
+    }
+  }
+
+  return distances
+}
