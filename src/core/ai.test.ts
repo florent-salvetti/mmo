@@ -56,19 +56,24 @@ describe('getAIAction — attaque', () => {
     expect(action.target).toEqual({ x: 2, y: 3 })
   })
 
-  it('n\'attaque pas si les PA sont insuffisants', () => {
-    // 2 PA disponibles < 3 requis par coup-epee
-    const enemy  = makeEntity('e', 2, 2, 'enemy', 2, 3)
+  it('n\'attaque pas si les PA sont insuffisants pour tout sort (ap=1)', () => {
+    // 1 PA disponible < 2 requis par la charge (le sort le moins cher)
+    const enemy  = makeEntity('e', 2, 2, 'enemy', 1, 3)
     const player = makeEntity('p', 2, 3)
     const action = getAIAction(makeState([enemy, player]), 'e')
     expect(action.type).not.toBe('USE_SPELL')
   })
 
-  it('n\'attaque pas si le joueur est hors portée (dist=2, max=1)', () => {
+  it('utilise la charge si le joueur est hors portée du coup d\'épée mais sur une ligne cardinale (dist=2)', () => {
+    // dist=2 → hors portée du coup-epee [1,1], mais dans la portée de la charge [1,3]
+    // la charge doit être utilisée à la place du coup d'épée
     const enemy  = makeEntity('e', 0, 0, 'enemy', 6, 0)
     const player = makeEntity('p', 2, 0)
     const action = getAIAction(makeState([enemy, player]), 'e')
-    expect(action.type).not.toBe('USE_SPELL')
+    expect(action.type).toBe('USE_SPELL')
+    if (action.type !== 'USE_SPELL') return
+    expect(action.spellId).toBe('charge')
+    expect(action.target).toEqual({ x: 2, y: 0 })
   })
 
   it('attaque le joueur adjacent parmi plusieurs, pas le lointain', () => {
@@ -302,5 +307,75 @@ describe('getAIAction — contournement des obstacles', () => {
     const player  = makeEntity('p', 4, 1)
     const action  = getAIAction(makeState([enemyA, enemyB, player], grid), 'eA')
     expect(action.type).toBe('MOVE')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Sort Charge — stratégie "engager"
+// ---------------------------------------------------------------------------
+
+describe('getAIAction — charge', () => {
+  it('joueur adjacent (dist=1) → coup d\'épée en priorité, pas la charge', () => {
+    // Les deux sorts couvrent dist=1, mais coup-epee est prioritaire (ordre 1 > 2).
+    const enemy  = makeEntity('e', 5, 5, 'enemy', 6, 3)
+    const player = makeEntity('p', 5, 6)
+    const action = getAIAction(makeState([enemy, player]), 'e')
+    expect(action.type).toBe('USE_SPELL')
+    if (action.type !== 'USE_SPELL') return
+    expect(action.spellId).toBe('coup-epee')
+  })
+
+  it('joueur chargeable à 3 cases sur une ligne cardinale → charge', () => {
+    // dist=3, ligne cardinale (même colonne), chemin libre → charge valide et utile.
+    // Coup-epee : dist=3 hors portée [1,1] → ignoré.
+    const enemy  = makeEntity('e', 5, 5, 'enemy', 6, 3)
+    const player = makeEntity('p', 5, 8)
+    const action = getAIAction(makeState([enemy, player]), 'e')
+    expect(action.type).toBe('USE_SPELL')
+    if (action.type !== 'USE_SPELL') return
+    expect(action.spellId).toBe('charge')
+    expect(action.target).toEqual({ x: 5, y: 8 })
+  })
+
+  it('joueur en diagonale (non chargeable) → déplacement à pied', () => {
+    // dist=4, dx=2 dy=2 → diagonal → charge refusée (exige une ligne cardinale pure).
+    // Coup-epee : dist=4 hors portée. → MOVE.
+    const enemy  = makeEntity('e', 5, 5, 'enemy', 6, 3)
+    const player = makeEntity('p', 7, 7)
+    const action = getAIAction(makeState([enemy, player]), 'e')
+    expect(action.type).toBe('MOVE')
+  })
+
+  it('charge en cooldown → pas de charge, déplacement vers le joueur', () => {
+    // Joueur à dist=3 sur ligne cardinale mais charge cooldown=1 → invalide.
+    // Coup-epee : dist=3 hors portée. → MOVE.
+    const entityWithCooldown: Entity = { ...makeEntity('e', 5, 5, 'enemy', 6, 3), cooldowns: { charge: 1 } }
+    const player = makeEntity('p', 5, 8)
+    const action = getAIAction(makeState([entityWithCooldown, player]), 'e')
+    expect(action.type).toBe('MOVE')
+  })
+
+  it('mur entre l\'entité et le joueur → la charge est bloquée, pas d\'attaque', () => {
+    // Mur en (5,6) empêche le déplacement : la charge n'atteint pas le joueur → pas de dégâts.
+    // mp=0 pour garantir un END_TURN propre (pas de déplacement possible non plus).
+    const grid   = makeGrid(10, 10, ['5,6'])
+    const enemy  = { ...makeEntity('e', 5, 5, 'enemy', 6, 0), mp: 0 }
+    const player = makeEntity('p', 5, 8)
+    const action = getAIAction(makeState([enemy, player], grid), 'e')
+    expect(action.type).toBe('END_TURN')
+  })
+
+  it('impactDamage pris en compte : priorise un joueur achevable par la charge', () => {
+    // Deux joueurs chargeables sur la même ligne (x), dist=3.
+    // pA : hp=40, non achevable (40 > 10 impactDamage).
+    // pB : hp=10, achevable (10 ≤ 10 impactDamage) → doit être ciblé en priorité.
+    const enemy   = makeEntity('e', 5, 5, 'enemy', 6, 3)
+    const playerA = { ...makeEntity('pA', 8, 5), hp: 40 }  // à droite, dist=3
+    const playerB = { ...makeEntity('pB', 2, 5), hp: 10 }  // à gauche, dist=3, achevable
+    const action  = getAIAction(makeState([enemy, playerA, playerB]), 'e')
+    expect(action.type).toBe('USE_SPELL')
+    if (action.type !== 'USE_SPELL') return
+    expect(action.spellId).toBe('charge')
+    expect(action.target).toEqual({ x: 2, y: 5 })  // pB achevable → priorité
   })
 })
