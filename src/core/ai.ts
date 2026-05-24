@@ -89,7 +89,7 @@ export function getAIAction(state: GameState, entityId: string): Action {
 function pickTarget(spell: Spell, inRange: Entity[]): Entity | undefined {
   if (inRange.length === 0) return undefined
 
-  const damage = spell.effects.reduce((sum, e) => sum + e.value, 0)
+  const damage = spell.effects.reduce((sum, e) => sum + (e.type === 'damage' ? e.value : 0), 0)
 
   const killable = inRange.filter(p => p.hp <= damage)
   if (killable.length > 0) {

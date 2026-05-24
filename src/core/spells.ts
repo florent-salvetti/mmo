@@ -5,12 +5,14 @@ import { hasLineOfSight } from './lineOfSight'
 // Un import par fichier JSON — Vite les traite au build, TypeScript les type-check.
 import coupEpeeRaw from '../../data/spells/coup-epee.json'
 import tirArcRaw   from '../../data/spells/tir-arc.json'
+import chargeRaw   from '../../data/spells/charge.json'
 
 // Le registre mappe chaque id de sort vers sa définition.
 // Ajouter un sort = ajouter une ligne ici + son fichier JSON.
 const SPELL_REGISTRY: Record<string, Spell> = {
   [coupEpeeRaw.id]: coupEpeeRaw as unknown as Spell,
   [tirArcRaw.id]:   tirArcRaw   as unknown as Spell,
+  [chargeRaw.id]:   chargeRaw   as unknown as Spell,
 }
 
 /** Retourne la définition d'un sort par son id, ou undefined si inconnu. */
@@ -77,6 +79,16 @@ export function tryApplySpell(
     return { valid: false }
   }
 
+  // Validation spécifique aux effets 'dash' : la cible doit être sur une ligne cardinale pure.
+  for (const effect of spell.effects) {
+    if (effect.type === 'dash') {
+      const dx = target.x - caster.position.x
+      const dy = target.y - caster.position.y
+      if (dx === 0 && dy === 0) return { valid: false }
+      if (dx !== 0 && dy !== 0) return { valid: false }  // diagonale → refusé
+    }
+  }
+
   // --- Tout est valide : construire le nouvel état ---
 
   // 1. Décrémenter les PA du lanceur.
@@ -87,9 +99,9 @@ export function tryApplySpell(
     ),
   }
 
-  // 2. Appliquer chaque effet sur la case cible.
+  // 2. Appliquer chaque effet.
   for (const effect of spell.effects) {
-    nextState = applyEffect(nextState, target, effect)
+    nextState = applyEffect(nextState, casterId, target, effect)
   }
 
   return { valid: true, nextState }
@@ -99,12 +111,10 @@ export function tryApplySpell(
 // Effets
 // ---------------------------------------------------------------------------
 
-function applyEffect(state: GameState, target: Position, effect: SpellEffect): GameState {
+function applyEffect(state: GameState, casterId: string, target: Position, effect: SpellEffect): GameState {
   switch (effect.type) {
-    case 'damage':
-      return applyDamage(state, target, effect.value)
-    // Quand HealEffect, PushEffect, etc. seront ajoutés à SpellEffect,
-    // TypeScript signalera ici qu'un cas n'est pas traité (retour manquant).
+    case 'damage': return applyDamage(state, target, effect.value)
+    case 'dash':   return applyDash(state, casterId, target, effect.maxDistance)
   }
 }
 
@@ -115,6 +125,45 @@ function applyDamage(state: GameState, target: Position, value: number): GameSta
       e.position.x === target.x && e.position.y === target.y && e.hp > 0
         ? { ...e, hp: Math.max(0, e.hp - value) }
         : e,
+    ),
+  }
+}
+
+/**
+ * Déplace le lanceur case par case dans la direction (caster → target) sur au plus
+ * `maxDistance` cases, en s'arrêtant sur la dernière case libre avant tout obstacle
+ * (case non walkable ou entité vivante).
+ * Si la première case est déjà bloquée, le lanceur ne bouge pas (PA quand même dépensés).
+ */
+function applyDash(state: GameState, casterId: string, target: Position, maxDistance: number): GameState {
+  const caster = state.entities.find(e => e.id === casterId)
+  if (!caster) return state
+
+  const stepX = Math.sign(target.x - caster.position.x)
+  const stepY = Math.sign(target.y - caster.position.y)
+
+  let landX = caster.position.x
+  let landY = caster.position.y
+
+  for (let step = 1; step <= maxDistance; step++) {
+    const nx = caster.position.x + stepX * step
+    const ny = caster.position.y + stepY * step
+    const cell = getCell(state.grid, { x: nx, y: ny })
+    if (!cell || !cell.walkable) break
+    const occupied = state.entities.some(
+      e => e.hp > 0 && e.id !== casterId && e.position.x === nx && e.position.y === ny,
+    )
+    if (occupied) break
+    landX = nx
+    landY = ny
+  }
+
+  if (landX === caster.position.x && landY === caster.position.y) return state
+
+  return {
+    ...state,
+    entities: state.entities.map(e =>
+      e.id === casterId ? { ...e, position: { x: landX, y: landY } } : e,
     ),
   }
 }
