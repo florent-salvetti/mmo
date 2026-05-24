@@ -6,8 +6,12 @@ const COLOR_BLOCKED     = '#1e2030'
 const COLOR_STROKE      = '#4a9e8a'
 const COLOR_STROKE_DARK = '#2a3050'
 
-// Largeur du sprite joueur en pixels (~1.5 tuiles). La hauteur est déduite du ratio de l'image.
-const PLAYER_SPRITE_W = 96
+// ─── Réglages du sprite joueur — modifie ces deux lignes pour caler le perso ─
+/** Largeur du sprite en pixels — change cette valeur pour agrandir ou rétrécir le perso. */
+const PLAYER_SPRITE_W = 80
+/** Décalage vertical en pixels — positif = descend le perso, négatif = le monte. */
+const PLAYER_SPRITE_Y_OFFSET = 9
+// ──────────────────────────────────────────────────────────────────────────────
 
 // Chargement unique au démarrage du module.
 // Guard typeof : en environnement test Node, Image n'existe pas → playerSpriteReady reste false
@@ -15,10 +19,17 @@ const PLAYER_SPRITE_W = 96
 const playerSprite: HTMLImageElement | null =
   typeof Image !== 'undefined' ? new Image() : null
 let playerSpriteReady = false
-if (playerSprite) {
-  playerSprite.onload = () => { playerSpriteReady = true }
-  playerSprite.src    = '/sprites/player.png'
-}
+
+/**
+ * Promesse résolue quand tous les sprites sont chargés (ou en erreur → fallback).
+ * Attendre cette promesse avant le premier render() évite le flash du cercle de fallback.
+ */
+export const spritesReady: Promise<void> = new Promise(resolve => {
+  if (!playerSprite) { resolve(); return }
+  playerSprite.onload  = () => { playerSpriteReady = true; resolve() }
+  playerSprite.onerror = () => resolve()  // image absente → fallback cercle, on démarre quand même
+  playerSprite.src     = '/sprites/player.png'
+})
 
 /** Dessine toute la grille isométrique sur le canvas. */
 export function renderGrid(
@@ -112,8 +123,9 @@ export function renderEntities(
     if (entity.team === 'player' && playerSpriteReady && playerSprite) {
       // Sprite joueur : bas-centre de l'image posé sur le centre de la case.
       const spriteH = PLAYER_SPRITE_W * playerSprite.naturalHeight / playerSprite.naturalWidth
-      ctx.drawImage(playerSprite, screenX - PLAYER_SPRITE_W / 2, screenY - spriteH, PLAYER_SPRITE_W, spriteH)
-      hpBarY = screenY - spriteH - 4
+      const spriteY = screenY - spriteH + PLAYER_SPRITE_Y_OFFSET
+      ctx.drawImage(playerSprite, screenX - PLAYER_SPRITE_W / 2, spriteY, PLAYER_SPRITE_W, spriteH)
+      hpBarY = spriteY - 4
     } else {
       // Cercle (ennemis, ou fallback joueur si sprite non encore chargé).
       const radius = 10

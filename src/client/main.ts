@@ -4,7 +4,7 @@ import { getSpell, getSpellTargetCells } from '../core/spells'
 import { getCell } from '../core/grid'
 import { applyAction } from '../core/reducer'
 import { getAIAction } from '../core/ai'
-import { renderGrid, renderHighlights, renderSpellRange, renderEntities } from './render/gridRenderer'
+import { renderGrid, renderHighlights, renderSpellRange, renderEntities, spritesReady } from './render/gridRenderer'
 import { computeOrigin, screenToGrid } from './render/projection'
 import { buildPath, startAnimation, tickAnimations, getVisualPosition } from './animation'
 
@@ -398,4 +398,4 @@ canvas.addEventListener('click', (e) => {
 
 refreshReachable()
 refreshSpellRange()
-render()
+spritesReady.then(() => render())
