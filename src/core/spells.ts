@@ -4,11 +4,13 @@ import { hasLineOfSight } from './lineOfSight'
 
 // Un import par fichier JSON — Vite les traite au build, TypeScript les type-check.
 import coupEpeeRaw from '../../data/spells/coup-epee.json'
+import tirArcRaw   from '../../data/spells/tir-arc.json'
 
 // Le registre mappe chaque id de sort vers sa définition.
 // Ajouter un sort = ajouter une ligne ici + son fichier JSON.
 const SPELL_REGISTRY: Record<string, Spell> = {
   [coupEpeeRaw.id]: coupEpeeRaw as unknown as Spell,
+  [tirArcRaw.id]:   tirArcRaw   as unknown as Spell,
 }
 
 /** Retourne la définition d'un sort par son id, ou undefined si inconnu. */

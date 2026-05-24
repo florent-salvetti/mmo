@@ -6,6 +6,7 @@ import { applyAction } from '../core/reducer'
 import { getAIAction } from '../core/ai'
 import { renderGrid, renderHighlights, renderSpellRange, renderEntities } from './render/gridRenderer'
 import { computeOrigin, screenToGrid } from './render/projection'
+import { buildPath, startAnimation, tickAnimations, getVisualPosition } from './animation'
 
 // ---------------------------------------------------------------------------
 // État initial de démonstration
@@ -51,18 +52,23 @@ const origin = computeOrigin(GRID_W, GRID_H, canvas)
 
 type UIMode = 'move' | 'spell'
 
-const PLAYER_SPELL_ID = 'coup-epee'
+const SPELL_COUP_EPEE  = 'coup-epee'
+const SPELL_TIR_ARC    = 'tir-arc'
 const AI_STEP_DELAY_MS = 500  // pause entre chaque action IA (visible à l'écran)
 
 // Zones des boutons dans le canvas (coordonnées pixels).
-const SPELL_BTN    = { x:  16, y: 56, w: 152, h: 22 }
-const END_TURN_BTN = { x: 176, y: 56, w: 100, h: 22 }
+const COUP_EPEE_BTN = { x:  16, y: 56, w: 140, h: 22 }
+const TIR_ARC_BTN   = { x: 164, y: 56, w: 130, h: 22 }
+const END_TURN_BTN  = { x: 302, y: 56, w: 100, h: 22 }
 
 let mode:          UIMode          = 'move'
+let activeSpellId: string          = SPELL_COUP_EPEE  // sort actif quand mode === 'spell'
 let hoveredPos:    Position | null = null
 let reachable:     Cell[]          = []
 let spellRange:    Cell[]          = []
 let aiTurnActive:  boolean         = false
+let pendingAfterAnimation: (() => void) | null = null
+let rafId: number | null = null
 
 function currentEntity(): Entity {
   return gameState.entities.find(e => e.id === gameState.currentEntityId)!
@@ -79,7 +85,7 @@ function refreshReachable(): void {
 }
 
 function refreshSpellRange(): void {
-  const spell = getSpell(PLAYER_SPELL_ID)
+  const spell = getSpell(activeSpellId)
   if (!spell) { spellRange = []; return }
   spellRange = getSpellTargetCells(gameState.grid, currentEntity(), spell)
 }
@@ -89,7 +95,6 @@ function refreshSpellRange(): void {
 // ---------------------------------------------------------------------------
 
 function runAIStep(): void {
-  // Stopper l'IA si le combat est déjà terminé.
   if (gameState.status !== 'ongoing') {
     aiTurnActive = false
     render()
@@ -97,12 +102,34 @@ function runAIStep(): void {
   }
 
   const action = getAIAction(gameState, gameState.currentEntityId)
+
+  // Le MOVE est animé : on applique l'état immédiatement, puis on attend la fin de l'animation.
+  if (action.type === 'MOVE') {
+    const fromPos        = currentEntity().position
+    const blockedForAnim = new Set(
+      gameState.entities
+        .filter(e => e.id !== gameState.currentEntityId && e.hp > 0)
+        .map(e => `${e.position.x},${e.position.y}`),
+    )
+    gameState = applyAction(gameState, action)
+    refreshReachable()
+    refreshSpellRange()
+    startAnimation(action.entityId, buildPath(gameState.grid, fromPos, action.to, blockedForAnim), performance.now())
+    pendingAfterAnimation = () => {
+      if (gameState.status !== 'ongoing') { aiTurnActive = false; render(); return }
+      if (isCurrentEntityEnemy()) setTimeout(runAIStep, 0)
+      else { aiTurnActive = false; render() }
+    }
+    startRenderLoop()
+    return
+  }
+
+  // USE_SPELL et END_TURN : pas d'animation, délai fixe pour que le joueur voit l'action.
   gameState = applyAction(gameState, action)
   refreshReachable()
   refreshSpellRange()
   render()
 
-  // Si le coup de l'ennemi a mis fin au combat, arrêter la boucle.
   if (gameState.status !== 'ongoing') {
     aiTurnActive = false
     return
@@ -112,7 +139,6 @@ function runAIStep(): void {
     if (isCurrentEntityEnemy()) {
       setTimeout(runAIStep, AI_STEP_DELAY_MS)
     } else {
-      // Retour au joueur : déverrouiller les contrôles.
       aiTurnActive = false
       render()
     }
@@ -131,6 +157,37 @@ function startAITurn(): void {
 // Rendu
 // ---------------------------------------------------------------------------
 
+/** Remplace la position des entités animées par leur position visuelle interpolée. */
+function getVisualEntities(): Entity[] {
+  const now = performance.now()
+  return gameState.entities.map(e => {
+    const vp = getVisualPosition(e.id, now)
+    return vp ? { ...e, position: vp } : e
+  })
+}
+
+/**
+ * Lance la boucle requestAnimationFrame si elle n'est pas déjà active.
+ * La boucle s'arrête d'elle-même quand toutes les animations sont terminées.
+ */
+function startRenderLoop(): void {
+  if (rafId !== null) return
+  rafId = requestAnimationFrame(animationLoop)
+}
+
+function animationLoop(now: number): void {
+  const stillActive = tickAnimations(now)
+  render()
+  if (stillActive) {
+    rafId = requestAnimationFrame(animationLoop)
+  } else {
+    rafId = null
+    const cb = pendingAfterAnimation
+    pendingAfterAnimation = null
+    cb?.()
+  }
+}
+
 function render(): void {
   ctx.fillStyle = '#0f0f1a'
   ctx.fillRect(0, 0, canvas.width, canvas.height)
@@ -146,7 +203,7 @@ function render(): void {
     }
   }
 
-  renderEntities(ctx, gameState.entities, origin)
+  renderEntities(ctx, getVisualEntities(), origin)
   renderHUD(ctx, currentEntity())
   renderOverlay()
 }
@@ -203,16 +260,21 @@ function renderHUD(ctx: CanvasRenderingContext2D, entity: Entity): void {
   ctx.fillStyle = '#ffffff'
   ctx.fillText(`${entity.ap} / ${entity.maxAp}`, pad + 30 + barW + 8, pad + 19)
 
-  // Bouton sort (désactivé pendant le tour ennemi)
-  const isSpellMode = mode === 'spell'
-  ctx.fillStyle   = aiTurnActive ? '#141414' : (isSpellMode ? '#5a2a14' : '#1e2e1e')
-  ctx.fillRect(SPELL_BTN.x, SPELL_BTN.y, SPELL_BTN.w, SPELL_BTN.h)
-  ctx.strokeStyle = aiTurnActive ? '#444444' : (isSpellMode ? '#ff7832' : '#56cfe1')
-  ctx.lineWidth   = 1.5
-  ctx.strokeRect(SPELL_BTN.x, SPELL_BTN.y, SPELL_BTN.w, SPELL_BTN.h)
-  ctx.fillStyle = aiTurnActive ? '#555555' : (isSpellMode ? '#ff9a5c' : '#cccccc')
+  // Boutons de sort (désactivés pendant le tour ennemi)
   ctx.font      = '11px monospace'
-  ctx.fillText("Coup d'epee (3 PA)", SPELL_BTN.x + 6, SPELL_BTN.y + 6)
+  ctx.lineWidth = 1.5
+  for (const { id, btn, label } of [
+    { id: SPELL_COUP_EPEE, btn: COUP_EPEE_BTN, label: "Coup d'epee (3 PA)" },
+    { id: SPELL_TIR_ARC,   btn: TIR_ARC_BTN,   label: 'Tir a l\'arc (4 PA)' },
+  ]) {
+    const isActive = mode === 'spell' && activeSpellId === id
+    ctx.fillStyle   = aiTurnActive ? '#141414' : (isActive ? '#5a2a14' : '#1e2e1e')
+    ctx.fillRect(btn.x, btn.y, btn.w, btn.h)
+    ctx.strokeStyle = aiTurnActive ? '#444444' : (isActive ? '#ff7832' : '#56cfe1')
+    ctx.strokeRect(btn.x, btn.y, btn.w, btn.h)
+    ctx.fillStyle   = aiTurnActive ? '#555555' : (isActive ? '#ff9a5c' : '#cccccc')
+    ctx.fillText(label, btn.x + 6, btn.y + 6)
+  }
 
   // Bouton "Fin de tour" (désactivé pendant le tour ennemi)
   ctx.fillStyle   = aiTurnActive ? '#141414' : '#1e1020'
@@ -228,14 +290,14 @@ function renderHUD(ctx: CanvasRenderingContext2D, entity: Entity): void {
   ctx.fillStyle = '#888888'
   ctx.font      = '10px monospace'
   if (aiTurnActive) {
-    ctx.fillText(`Tour de ${entity.name}...`, pad, SPELL_BTN.y + SPELL_BTN.h + 6)
+    ctx.fillText(`Tour de ${entity.name}...`, pad, COUP_EPEE_BTN.y + COUP_EPEE_BTN.h + 6)
   } else {
-    const spell    = getSpell(PLAYER_SPELL_ID)
+    const spell    = getSpell(activeSpellId)
     const canCast  = spell !== undefined && entity.ap >= spell.apCost
     const hint     = mode === 'move'
       ? (entity.mp === 0 ? 'Plus de PM disponibles' : 'Clic case bleue = deplacer')
       : (canCast ? 'Clic case orange = lancer' : 'PA insuffisants')
-    ctx.fillText(hint, pad, SPELL_BTN.y + SPELL_BTN.h + 6)
+    ctx.fillText(hint, pad, COUP_EPEE_BTN.y + COUP_EPEE_BTN.h + 6)
   }
 }
 
@@ -268,14 +330,22 @@ canvas.addEventListener('click', (e) => {
   const clickX = e.clientX - rect.left
   const clickY = e.clientY - rect.top
 
-  // Clic sur le bouton sort : basculer entre les modes.
-  if (
-    clickX >= SPELL_BTN.x && clickX <= SPELL_BTN.x + SPELL_BTN.w &&
-    clickY >= SPELL_BTN.y && clickY <= SPELL_BTN.y + SPELL_BTN.h
-  ) {
-    mode = mode === 'spell' ? 'move' : 'spell'
-    render()
-    return
+  // Clic sur un bouton de sort : activer ce sort (re-cliquer le sort actif = retour mode déplacement).
+  for (const { id, btn } of [
+    { id: SPELL_COUP_EPEE, btn: COUP_EPEE_BTN },
+    { id: SPELL_TIR_ARC,   btn: TIR_ARC_BTN },
+  ]) {
+    if (clickX >= btn.x && clickX <= btn.x + btn.w && clickY >= btn.y && clickY <= btn.y + btn.h) {
+      if (mode === 'spell' && activeSpellId === id) {
+        mode = 'move'
+      } else {
+        activeSpellId = id
+        mode = 'spell'
+        refreshSpellRange()
+      }
+      render()
+      return
+    }
   }
 
   // Clic sur le bouton "Fin de tour".
@@ -296,15 +366,23 @@ canvas.addEventListener('click', (e) => {
   if (!getCell(gameState.grid, pos)) return
 
   if (mode === 'move') {
-    gameState = applyAction(gameState, { type: 'MOVE', entityId: gameState.currentEntityId, to: pos })
+    const fromPos        = currentEntity().position
+    const entityId       = gameState.currentEntityId
+    const blockedForAnim = new Set(
+      gameState.entities
+        .filter(e => e.id !== entityId && e.hp > 0)
+        .map(e => `${e.position.x},${e.position.y}`),
+    )
+    gameState = applyAction(gameState, { type: 'MOVE', entityId, to: pos })
     refreshReachable()
     refreshSpellRange()
-    render()
+    startAnimation(entityId, buildPath(gameState.grid, fromPos, pos, blockedForAnim), performance.now())
+    startRenderLoop()
   } else {
     // Mode sort : envoyer USE_SPELL. Si l'état a changé, le sort a été appliqué.
     const prevState = gameState
     gameState = applyAction(gameState, {
-      type: 'USE_SPELL', entityId: gameState.currentEntityId, spellId: PLAYER_SPELL_ID, target: pos,
+      type: 'USE_SPELL', entityId: gameState.currentEntityId, spellId: activeSpellId, target: pos,
     })
     if (gameState !== prevState) {
       refreshReachable()

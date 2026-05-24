@@ -1,0 +1,10 @@
+{
+  "id": "tir-arc",
+  "name": "Tir à l'arc",
+  "apCost": 4,
+  "range": { "min": 2, "max": 5 },
+  "needsLineOfSight": true,
+  "effects": [
+    { "type": "damage", "value": 18 }
+  ]
+}
