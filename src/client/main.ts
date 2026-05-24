@@ -182,6 +182,12 @@ function refreshChargeTargets(): void {
 }
 
 function refreshSpellRange(): void {
+  // Si le sort actif est en recharge pour l'entité courante, revenir en mode déplacement.
+  if ((currentEntity().cooldowns?.[activeSpellId] ?? 0) > 0) {
+    mode = 'move'
+    spellRange = []
+    return
+  }
   if (activeSpellId === SPELL_CHARGE) { refreshChargeTargets(); return }
   const spell = getSpell(activeSpellId)
   if (!spell) { spellRange = []; return }
@@ -397,13 +403,18 @@ function renderHUD(ctx: CanvasRenderingContext2D, entity: Entity): void {
     { id: SPELL_TIR_ARC,   btn: TIR_ARC_BTN,   label: "Tir a l'arc (4 PA)" },
     { id: SPELL_CHARGE,    btn: CHARGE_BTN,    label: 'Charge (2 PA)' },
   ]) {
-    const isActive = mode === 'spell' && activeSpellId === id
-    ctx.fillStyle   = aiTurnActive ? '#141414' : (isActive ? '#5a2a14' : '#1e2e1e')
+    const cd         = entity.cooldowns?.[id] ?? 0
+    const onCooldown = cd > 0
+    const isDisabled = aiTurnActive || onCooldown
+    const isActive   = !isDisabled && mode === 'spell' && activeSpellId === id
+    // Quand en recharge : remplace "(N PA)" par "[cd: N]" pour ne pas confondre avec le coût PA.
+    const displayLabel = onCooldown ? label.split(' (')[0] + ` [cd: ${cd}]` : label
+    ctx.fillStyle   = isDisabled ? '#141414' : (isActive ? '#5a2a14' : '#1e2e1e')
     ctx.fillRect(btn.x, btn.y, btn.w, btn.h)
-    ctx.strokeStyle = aiTurnActive ? '#444444' : (isActive ? '#ff7832' : '#56cfe1')
+    ctx.strokeStyle = isDisabled ? '#444444' : (isActive ? '#ff7832' : '#56cfe1')
     ctx.strokeRect(btn.x, btn.y, btn.w, btn.h)
-    ctx.fillStyle   = aiTurnActive ? '#555555' : (isActive ? '#ff9a5c' : '#cccccc')
-    ctx.fillText(label, btn.x + 6, btn.y + 6)
+    ctx.fillStyle   = isDisabled ? '#555555' : (isActive ? '#ff9a5c' : '#cccccc')
+    ctx.fillText(displayLabel, btn.x + 6, btn.y + 6)
   }
 
   // Bouton "Fin de tour" (désactivé pendant le tour ennemi)
@@ -423,10 +434,11 @@ function renderHUD(ctx: CanvasRenderingContext2D, entity: Entity): void {
     ctx.fillText(`Tour de ${entity.name}...`, pad, COUP_EPEE_BTN.y + COUP_EPEE_BTN.h + 6)
   } else {
     const spell    = getSpell(activeSpellId)
-    const canCast  = spell !== undefined && entity.ap >= spell.apCost
+    const cdActive = entity.cooldowns?.[activeSpellId] ?? 0
+    const canCast  = spell !== undefined && entity.ap >= spell.apCost && cdActive === 0
     const hint     = mode === 'move'
       ? (entity.mp === 0 ? 'Plus de PM disponibles' : 'Clic case bleue = deplacer')
-      : (canCast ? 'Clic case orange = lancer' : 'PA insuffisants')
+      : (cdActive > 0 ? `En recharge : ${cdActive} tour(s)` : (canCast ? 'Clic case orange = lancer' : 'PA insuffisants'))
     ctx.fillText(hint, pad, COUP_EPEE_BTN.y + COUP_EPEE_BTN.h + 6)
   }
 }
@@ -484,6 +496,7 @@ canvas.addEventListener('click', (e) => {
     { id: SPELL_CHARGE,    btn: CHARGE_BTN },
   ]) {
     if (clickX >= btn.x && clickX <= btn.x + btn.w && clickY >= btn.y && clickY <= btn.y + btn.h) {
+      if ((currentEntity().cooldowns?.[id] ?? 0) > 0) return  // sort en recharge : clic ignoré
       if (mode === 'spell' && activeSpellId === id) {
         mode = 'move'
       } else {
