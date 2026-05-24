@@ -36,7 +36,7 @@ export function applyAction(state: GameState, action: Action): GameState {
       return {
         ...state,
         entities: state.entities.map(e =>
-          e.id === nextId ? { ...e, ap: e.maxAp, mp: e.maxMp } : e,
+          e.id === nextId ? decrementCooldowns({ ...e, ap: e.maxAp, mp: e.maxMp }) : e,
         ),
         currentEntityId: nextId,
         turn: didWrap ? state.turn + 1 : state.turn,
@@ -80,8 +80,23 @@ export function computeCombatStatus(entities: Entity[]): CombatStatus {
 }
 
 // ---------------------------------------------------------------------------
-// Handlers privés
+// Helpers privés
 // ---------------------------------------------------------------------------
+
+/**
+ * Décrémente tous les cooldowns d'une entité d'un tour.
+ * Les cooldowns arrivés à 0 sont supprimés (sort de nouveau disponible).
+ */
+function decrementCooldowns(entity: Entity): Entity {
+  if (!entity.cooldowns) return entity
+  const next: Record<string, number> = {}
+  for (const [spellId, remaining] of Object.entries(entity.cooldowns)) {
+    if (remaining > 1) next[spellId] = remaining - 1
+    // remaining === 1 → expire ce tour → retiré de la map (= disponible)
+  }
+  const hasCooldowns = Object.keys(next).length > 0
+  return { ...entity, cooldowns: hasCooldowns ? next : undefined }
+}
 
 function applyMove(
   state: GameState,

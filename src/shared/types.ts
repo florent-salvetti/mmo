@@ -45,6 +45,11 @@ export type Entity = {
   maxMp: number
   /** Type de créature (ex. 'sanglier') — détermine les sprites à charger. Absent = cercle de fallback. */
   creatureType?: string
+  /**
+   * Tours de recharge restants par sort (spellId → tours restants).
+   * Absent ou valeur à 0 = sort disponible. Décrémenté au début du tour de l'entité.
+   */
+  cooldowns?: Record<string, number>
 }
 
 // ---------------------------------------------------------------------------
@@ -102,4 +107,6 @@ export type Spell = {
   range:            { min: number; max: number }
   needsLineOfSight: boolean
   effects:          SpellEffect[]
+  /** Tours d'indisponibilité après lancement. Absent ou 0 = pas de cooldown. */
+  cooldown?:        number
 }

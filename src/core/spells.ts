@@ -109,6 +109,8 @@ export function tryApplySpell(
 
   if (caster.ap < spell.apCost) return { valid: false }
 
+  if ((caster.cooldowns?.[spell.id] ?? 0) > 0) return { valid: false }
+
   const dist = manhattanDistance(caster.position, target)
   if (dist < spell.range.min || dist > spell.range.max) return { valid: false }
 
@@ -139,6 +141,18 @@ export function tryApplySpell(
   // 2. Appliquer chaque effet.
   for (const effect of spell.effects) {
     nextState = applyEffect(nextState, casterId, target, effect)
+  }
+
+  // 3. Armer le cooldown si le sort en a un.
+  if (spell.cooldown && spell.cooldown > 0) {
+    nextState = {
+      ...nextState,
+      entities: nextState.entities.map(e =>
+        e.id === casterId
+          ? { ...e, cooldowns: { ...e.cooldowns, [spell.id]: spell.cooldown! } }
+          : e,
+      ),
+    }
   }
 
   return { valid: true, nextState }

@@ -4,6 +4,7 @@
   "apCost": 2,
   "range": { "min": 1, "max": 4 },
   "needsLineOfSight": false,
+  "cooldown": 2,
   "effects": [
     { "type": "dash", "maxDistance": 2, "impactDamage": 10 }
   ]
