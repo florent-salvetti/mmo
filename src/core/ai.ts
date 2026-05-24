@@ -1,4 +1,4 @@
-import type { Action, Entity, GameState, Position } from '../shared/types'
+import type { Action, Entity, GameState, Position, Spell } from '../shared/types'
 import { manhattanDistance } from './grid'
 import { getReachableCells, getPathDistances } from './movement'
 import { getSpell } from './spells'
@@ -37,11 +37,12 @@ export function getAIAction(state: GameState, entityId: string): Action {
   // --- 1. Attaque si un joueur est dans la portée du sort ---
   const spell = getSpell(ENEMY_SPELL_ID)
   if (spell && entity.ap >= spell.apCost) {
-    const target = players.find(p => {
+    const inRange = players.filter(p => {
       const dist = manhattanDistance(entity.position, p.position)
       if (dist < spell.range.min || dist > spell.range.max) return false
       return !spell.needsLineOfSight || hasLineOfSight(state.grid, entity.position, p.position)
     })
+    const target = pickTarget(spell, inRange)
     if (target) {
       return { type: 'USE_SPELL', entityId, spellId: ENEMY_SPELL_ID, target: target.position }
     }
@@ -72,6 +73,25 @@ export function getAIAction(state: GameState, entityId: string): Action {
 
   // --- 3. Fin de tour ---
   return { type: 'END_TURN', entityId }
+}
+
+/**
+ * Sélectionne la cible optimale parmi les joueurs à portée.
+ * Priorité 1 : un joueur achevable ce tour (dégâts totaux du sort >= PV actuels).
+ * Priorité 2 : le joueur avec le moins de PV.
+ * Retourne undefined si la liste est vide.
+ */
+function pickTarget(spell: Spell, inRange: Entity[]): Entity | undefined {
+  if (inRange.length === 0) return undefined
+
+  const damage = spell.effects.reduce((sum, e) => sum + e.value, 0)
+
+  const killable = inRange.filter(p => p.hp <= damage)
+  if (killable.length > 0) {
+    return killable.reduce((best, p) => p.hp < best.hp ? p : best)
+  }
+
+  return inRange.reduce((best, p) => p.hp < best.hp ? p : best)
 }
 
 /** Retourne l'entité de `candidates` la plus proche de `from`. */

@@ -175,6 +175,53 @@ describe('getAIAction — priorité attaque > déplacement', () => {
 })
 
 // ---------------------------------------------------------------------------
+// Sélection de cible (pickTarget)
+// ---------------------------------------------------------------------------
+
+describe('getAIAction — sélection de cible', () => {
+  // coup-epee : 12 dégâts, portée [1,1].
+
+  it('priorise un joueur achevable même s\'il n\'est pas le plus faible ni le premier en portée', () => {
+    // pC : hp=50, adjacent — non achevable (50 > 12), premier dans le tableau
+    //      → l'ancien code (find) l'aurait ciblé en premier
+    // pB : hp=12, adjacent — achevable (12 ≤ 12), second dans le tableau
+    // pA : hp=5,  loin (hors portée) — le plus faible du jeu mais inaccessible
+    // Attendu : pB ciblé (achevable), ni pC (premier trouvé) ni pA (le plus faible global)
+    const enemy   = makeEntity('e', 5, 5, 'enemy', 6, 0)
+    const playerC = { ...makeEntity('pC', 5, 4), hp: 50 }
+    const playerB = { ...makeEntity('pB', 5, 6), hp: 12 }
+    const playerA = { ...makeEntity('pA', 9, 9), hp: 5  }
+    const action  = getAIAction(makeState([enemy, playerC, playerB, playerA]), 'e')
+    expect(action.type).toBe('USE_SPELL')
+    if (action.type !== 'USE_SPELL') return
+    expect(action.target).toEqual({ x: 5, y: 6 })  // pB achevable
+  })
+
+  it('à défaut d\'achèvement possible, vise le joueur avec le moins de PV parmi ceux à portée', () => {
+    // pA : hp=40, premier dans le tableau (l'ancien code l'aurait ciblé)
+    // pB : hp=25, moins de PV mais second dans le tableau
+    // Aucun n'est achevable (40 > 12, 25 > 12) → priorité 2 : le moins bien portant
+    const enemy   = makeEntity('e', 5, 5, 'enemy', 6, 0)
+    const playerA = { ...makeEntity('pA', 5, 4), hp: 40 }
+    const playerB = { ...makeEntity('pB', 5, 6), hp: 25 }
+    const action  = getAIAction(makeState([enemy, playerA, playerB]), 'e')
+    expect(action.type).toBe('USE_SPELL')
+    if (action.type !== 'USE_SPELL') return
+    expect(action.target).toEqual({ x: 5, y: 6 })  // pB, moins de PV
+  })
+
+  it('cible unique à portée : elle est toujours visée quelle que soit sa santé', () => {
+    // Un seul joueur accessible — doit être ciblé qu'il soit achevable ou non
+    const enemy  = makeEntity('e', 5, 5, 'enemy', 6, 0)
+    const player = { ...makeEntity('p', 5, 4), hp: 30 }
+    const action = getAIAction(makeState([enemy, player]), 'e')
+    expect(action.type).toBe('USE_SPELL')
+    if (action.type !== 'USE_SPELL') return
+    expect(action.target).toEqual({ x: 5, y: 4 })
+  })
+})
+
+// ---------------------------------------------------------------------------
 // Contournement des obstacles (bug Manhattan vs BFS réel)
 // ---------------------------------------------------------------------------
 
