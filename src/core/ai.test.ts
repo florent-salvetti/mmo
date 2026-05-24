@@ -284,4 +284,23 @@ describe('getAIAction — contournement des obstacles', () => {
     if (action.type !== 'MOVE') return
     expect(action.to).toEqual({ x: 1, y: 0 })
   })
+
+  it('contourne un allié bloquant plutôt que de rester immobile (régression entités ignorées)', () => {
+    // Grille 5×3, ennemi A en (0,1), ennemi B en (1,1) bloque le chemin direct, joueur en (4,1) :
+    //   . . . . .
+    //   A B . . P
+    //   . . . . .
+    //
+    // Sans fix : BFS ignorait B → distance A→P = 4 ; cases accessibles (0,0),(0,2),(1,0),(1,2)
+    //   ont toutes dist ≥ 4 par BFS sans entités → END_TURN (bug)
+    //
+    // Avec fix : BFS bloque B → distance A→P = 6 (détour par (0,0) ou (0,2)) ;
+    //   (1,0) dist = 4 < 6 → l'ennemi A doit avancer en contournant B
+    const grid    = makeGrid(5, 3)
+    const enemyA  = makeEntity('eA', 0, 1, 'enemy', 0, 2)  // ap=0, mp=2
+    const enemyB  = makeEntity('eB', 1, 1, 'enemy', 0, 0)
+    const player  = makeEntity('p', 4, 1)
+    const action  = getAIAction(makeState([enemyA, enemyB, player], grid), 'eA')
+    expect(action.type).toBe('MOVE')
+  })
 })

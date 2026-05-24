@@ -51,10 +51,15 @@ export function getAIAction(state: GameState, entityId: string): Action {
   // --- 2. Avancer vers le joueur le plus proche ---
   const reachable = getReachableCells(state.grid, entity, state.entities, entity.mp)
 
-  // BFS depuis le joueur : distances réelles sur la topologie de la grille.
-  // On part du joueur (pas de l'ennemi) pour comparer chaque case accessible
-  // à la position actuelle de l'ennemi — même au-delà de sa portée de déplacement.
-  const distFromNearest   = getPathDistances(state.grid, nearest.position)
+  // BFS depuis le joueur : distances réelles tenant compte des entités qui bloquent.
+  // On exclut le mover lui-même et la cible (nearest) des obstacles, sinon le BFS
+  // ne pourrait jamais atteindre la cible ni partir de la case du mover.
+  const blockedForPath = new Set(
+    state.entities
+      .filter(e => e.hp > 0 && e.id !== entity.id && e.id !== nearest.id)
+      .map(e => posKey(e.position)),
+  )
+  const distFromNearest = getPathDistances(state.grid, nearest.position, blockedForPath)
   const currentRealDist   = distFromNearest.get(posKey(entity.position)) ?? Infinity
 
   // Garde uniquement les cases qui rapprochent réellement (coût chemin réel, pas Manhattan).
