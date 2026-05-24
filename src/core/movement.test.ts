@@ -113,25 +113,43 @@ describe('getReachableCells', () => {
     expect(pos).not.toContain('4,0')  // bloqué derrière l'ennemi
   })
 
-  it('un allié bloque la destination mais pas le passage', () => {
+  it('un allié vivant bloque le passage et sa case (comme un ennemi)', () => {
     // Ligne : (0,0) mover | (1,0) allié | (2,0) libre
+    // L'allié bloque complètement : on ne peut ni le traverser ni s'y arrêter.
     const grid  = makeGrid(3, 1)
     const mover = makeEntity('m', 0, 0, 'player')
     const ally  = makeEntity('a', 1, 0, 'player')
     const pos   = positions(getReachableCells(grid, mover, [ally], 3))
-    expect(pos).not.toContain('1,0')  // allié : pas une destination
-    expect(pos).toContain('2,0')      // mais on peut passer au travers
+    expect(pos).not.toContain('1,0')  // allié : case bloquée
+    expect(pos).not.toContain('2,0')  // derrière l'allié : inaccessible
   })
 
-  it('on ne peut pas s\'arrêter sur un allié même avec suffisamment de PM', () => {
+  it('un allié devant soi bloque toutes les cases derrière lui', () => {
+    // Ligne 5 cases : mover en (0,0), allié en (3,0) ; les cases (1,0) et (2,0) restent accessibles
     const grid  = makeGrid(5, 1)
     const mover = makeEntity('m', 0, 0, 'player')
     const ally  = makeEntity('a', 3, 0, 'player')
     const pos   = positions(getReachableCells(grid, mover, [ally], 3))
-    expect(pos).not.toContain('3,0')
-    // (1,0) et (2,0) sont des destinations valides
-    expect(pos).toContain('1,0')
-    expect(pos).toContain('2,0')
+    expect(pos).not.toContain('3,0')  // allié bloque sa propre case
+    expect(pos).toContain('1,0')      // avant l'allié : accessible
+    expect(pos).toContain('2,0')      // avant l'allié : accessible
+  })
+
+  it('deux entités de même équipe se bloquent mutuellement le passage', () => {
+    // Ligne : p1(0,0) | p2(1,0) | .(2,0)
+    // p1 ne peut pas atteindre p2 ni les cases derrière lui.
+    // p2 ne peut pas atteindre p1 non plus.
+    const grid = makeGrid(3, 1)
+    const p1   = makeEntity('p1', 0, 0, 'player')
+    const p2   = makeEntity('p2', 1, 0, 'player')
+
+    const posP1 = positions(getReachableCells(grid, p1, [p1, p2], 3))
+    expect(posP1).not.toContain('1,0')  // p2 bloque
+    expect(posP1).not.toContain('2,0')  // derrière p2 : inaccessible
+
+    const posP2 = positions(getReachableCells(grid, p2, [p1, p2], 3))
+    expect(posP2).not.toContain('0,0')  // p1 bloque
+    expect(posP2).toContain('2,0')      // à droite (libre) : accessible
   })
 
   it('plusieurs ennemis peuvent créer un couloir de blocage total', () => {

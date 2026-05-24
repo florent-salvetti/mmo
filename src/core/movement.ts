@@ -17,8 +17,9 @@ export type ReachableCell = {
  * Retourne toutes les cases que `mover` peut atteindre avec `mp` points de mouvement.
  *
  * Règles :
- *  - On ne traverse pas une case occupée par un ennemi (elle bloque).
- *  - On peut traverser une case occupée par un allié, mais on ne peut pas s'y arrêter.
+ *  - Toute entité vivante autre que le mover bloque le passage ET la destination,
+ *    quelle que soit son équipe.
+ *  - Les entités mortes (hp = 0) sont ignorées.
  *  - La case de départ n'est jamais une destination.
  *
  * Algorithme : BFS (parcours en largeur) sur la grille.
@@ -29,15 +30,10 @@ export function getReachableCells(
   entities: Entity[],
   mp: number,
 ): ReachableCell[] {
-  // Positions des ennemis vivants : bloquent le passage.
-  const enemyPos = new Set(
-    entities
-      .filter(e => e.id !== mover.id && e.team !== mover.team && e.hp > 0)
-      .map(e => posKey(e.position)),
-  )
-
-  // Positions de toutes les autres entités vivantes : empêchent de s'y arrêter.
-  const occupiedPos = new Set(
+  // Toute entité vivante (hormis le mover) bloque le passage ET la destination.
+  // Les deux anciens ensembles (enemyPos / occupiedPos) étaient devenus identiques :
+  // on les fusionne en un seul.
+  const blockedPos = new Set(
     entities
       .filter(e => e.id !== mover.id && e.hp > 0)
       .map(e => posKey(e.position)),
@@ -53,8 +49,9 @@ export function getReachableCells(
   while (queue.length > 0) {
     const { pos, steps } = queue.shift()!
 
-    // Destination valide : pas le départ, pas occupée.
-    if (steps > 0 && !occupiedPos.has(posKey(pos))) {
+    // Destination valide : toute case enfilée hors case de départ.
+    // Les cases bloquées ne sont jamais enfilées, donc aucun check supplémentaire n'est nécessaire.
+    if (steps > 0) {
       reachable.push({ cell: grid[pos.y]![pos.x]!, cost: steps })
     }
 
@@ -63,7 +60,7 @@ export function getReachableCells(
 
     for (const neighbor of getNeighbors(grid, pos)) {
       const key = posKey(neighbor.position)
-      if (enemyPos.has(key)) continue
+      if (blockedPos.has(key)) continue
       if (visited.has(key)) continue
       visited.add(key)
       queue.push({ pos: neighbor.position, steps: steps + 1 })
