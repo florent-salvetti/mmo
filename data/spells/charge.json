@@ -2,10 +2,10 @@
   "id": "charge",
   "name": "Charge",
   "apCost": 2,
-  "range": { "min": 1, "max": 4 },
+  "range": { "min": 1, "max": 3 },
   "needsLineOfSight": false,
   "cooldown": 2,
   "effects": [
-    { "type": "dash", "maxDistance": 2, "impactDamage": 10 }
+    { "type": "dash", "maxDistance": 3, "impactDamage": 10 }
   ]
 }

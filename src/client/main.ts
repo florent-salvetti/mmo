@@ -142,10 +142,14 @@ function refreshReachable(): void {
 }
 
 /**
- * Pour la charge, les cases ciblables ne sont pas les cases dans la portée du sort
- * mais les 4 destinations cardinales réelles (calculées par getDashDestination).
- * Si le lanceur est bloqué immédiatement dans une direction mais qu'un ennemi est
- * sur la case adjacente, on surligne quand même cette case (charge sur place = impact).
+ * Pour la charge, les cases surlignées dépendent du contenu de chaque direction cardinale :
+ *
+ * - Adversaire vivant joignable (sans obstacle entre lui et nous, à ≤ maxDistance cases) :
+ *   on surligne sa case — cliquer dessus déclenche une charge offensive.
+ *
+ * - Aucun adversaire joignable dans cette direction (ou direction bloquée par un allié/mur
+ *   avant tout ennemi) : on surligne la case où le lanceur atterrirait (déplacement libre).
+ *   Rien si le lanceur ne peut pas bouger dans cette direction.
  */
 function refreshChargeTargets(): void {
   const entity = currentEntity()
@@ -158,20 +162,32 @@ function refreshChargeTargets(): void {
   const targets: Cell[] = []
 
   for (const [stepX, stepY] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as [number, number][]) {
-    const dest = getDashDestination(gameState, entity.id, stepX, stepY, maxDistance)
-    if (dest.x !== entity.position.x || dest.y !== entity.position.y) {
-      // Le lanceur peut avancer : on surligne la case d'arrivée.
-      const cell = getCell(gameState.grid, dest)
-      if (cell) targets.push(cell)
+    // Parcourir la direction case par case jusqu'à maxDistance.
+    let offensiveTarget: Cell | null = null
+
+    for (let step = 1; step <= maxDistance; step++) {
+      const nx = entity.position.x + stepX * step
+      const ny = entity.position.y + stepY * step
+      const scanned = getCell(gameState.grid, { x: nx, y: ny })
+      if (!scanned || !scanned.walkable) break
+
+      const atCell = gameState.entities.find(e => e.hp > 0 && e.position.x === nx && e.position.y === ny)
+      if (atCell) {
+        if (atCell.team !== entity.team) offensiveTarget = scanned  // adversaire joignable
+        // Toute entité vivante (allié ou ennemi) arrête le scan dans cette direction.
+        break
+      }
+    }
+
+    if (offensiveTarget) {
+      // Charge offensive : surligner la case de l'adversaire (le joueur clique dessus).
+      targets.push(offensiveTarget)
     } else {
-      // Bloqué immédiatement — on surligne quand même si un ennemi adjacent peut être frappé.
-      const adjPos = { x: entity.position.x + stepX, y: entity.position.y + stepY }
-      const hasEnemy = gameState.entities.some(
-        e => e.hp > 0 && e.team !== entity.team &&
-             e.position.x === adjPos.x && e.position.y === adjPos.y,
-      )
-      if (hasEnemy) {
-        const cell = getCell(gameState.grid, adjPos)
+      // Pas d'adversaire joignable : surligner la destination de déplacement libre.
+      // getDashDestination s'arrête avant tout obstacle (mur, allié), résultat correct dans tous les cas.
+      const dest = getDashDestination(gameState, entity.id, stepX, stepY, maxDistance)
+      if (dest.x !== entity.position.x || dest.y !== entity.position.y) {
+        const cell = getCell(gameState.grid, dest)
         if (cell) targets.push(cell)
       }
     }

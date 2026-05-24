@@ -181,10 +181,16 @@ function applyDamage(state: GameState, target: Position, value: number): GameSta
 }
 
 /**
- * Déplace le lanceur case par case dans la direction (caster → target) sur au plus
- * `maxDistance` cases, en s'arrêtant sur la dernière case libre avant tout obstacle
- * (case non walkable ou entité vivante).
- * Si la première case est déjà bloquée, le lanceur ne bouge pas (PA quand même dépensés).
+ * Déplace le lanceur dans la direction (caster → target) en deux modes :
+ *
+ * Mode offensif — si `target` est occupée par un adversaire vivant :
+ *   Le lanceur fonce vers cet adversaire et s'arrête sur la case juste devant lui.
+ *   Si aucun obstacle ne bloque le chemin et que le lanceur atterrit bien en face,
+ *   il inflige `impactDamage` à l'adversaire ciblé.
+ *
+ * Mode libre — si `target` est une case vide (pas d'adversaire dessus) :
+ *   Le lanceur avance jusqu'à `maxDistance` cases dans la direction de la cible,
+ *   s'arrêtant avant tout mur ou entité vivante. Pas de dégâts.
  */
 function applyDash(
   state: GameState,
@@ -199,12 +205,23 @@ function applyDash(
   const stepX = Math.sign(target.x - caster.position.x)
   const stepY = Math.sign(target.y - caster.position.y)
 
+  // Mode offensif : la cible est un adversaire vivant.
+  const targetAdversary = state.entities.find(
+    e => e.hp > 0 && e.team !== caster.team &&
+         e.position.x === target.x && e.position.y === target.y,
+  )
+  const isOffensive = targetAdversary !== undefined
+
   let landX = caster.position.x
   let landY = caster.position.y
 
   for (let step = 1; step <= maxDistance; step++) {
     const nx = caster.position.x + stepX * step
     const ny = caster.position.y + stepY * step
+
+    // Offensif : on s'arrête AVANT l'adversaire cible (il occupe sa case).
+    if (isOffensive && nx === target.x && ny === target.y) break
+
     const cell = getCell(state.grid, { x: nx, y: ny })
     if (!cell || !cell.walkable) break
     const occupied = state.entities.some(
@@ -215,6 +232,7 @@ function applyDash(
     landY = ny
   }
 
+  // Appliquer le déplacement si le lanceur a avancé.
   let result: GameState = (landX !== caster.position.x || landY !== caster.position.y)
     ? {
         ...state,
@@ -224,12 +242,14 @@ function applyDash(
       }
     : state
 
-  if (impactDamage > 0) {
-    const impactPos = { x: landX + stepX, y: landY + stepY }
-    const hasAdversary = result.entities.some(
-      e => e.hp > 0 && e.team !== caster.team && e.position.x === impactPos.x && e.position.y === impactPos.y,
-    )
-    if (hasAdversary) result = applyDamage(result, impactPos, impactDamage)
+  // Dégâts d'impact : uniquement en mode offensif, et uniquement si le lanceur
+  // a atterri exactement en face de l'adversaire cible (rien n'a bloqué le chemin).
+  if (isOffensive && impactDamage > 0) {
+    const frontX = landX + stepX
+    const frontY = landY + stepY
+    if (frontX === target.x && frontY === target.y) {
+      result = applyDamage(result, target, impactDamage)
+    }
   }
 
   return result
