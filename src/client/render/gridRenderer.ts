@@ -1,4 +1,5 @@
 import type { Cell, Entity, Position } from '../../shared/types'
+import type { ActiveDamageNumber } from '../effects'
 import { gridToScreen, TILE_WIDTH, TILE_HEIGHT, type ScreenPos } from './projection'
 
 const COLOR_WALKABLE    = '#2d5a4e'
@@ -159,6 +160,7 @@ export function renderEntities(
   entities: Entity[],
   origin: ScreenPos,
   directions: Map<string, PlayerDirection> = new Map(),
+  flashingEntities: Map<string, number> = new Map(),
 ): void {
   for (const entity of entities) {
     if (entity.hp <= 0) continue
@@ -198,7 +200,49 @@ export function renderEntities(
     ctx.fillRect(screenX - barW / 2, hpBarY, barW, barH)
     ctx.fillStyle = barClr
     ctx.fillRect(screenX - barW / 2, hpBarY, barW * ratio, barH)
+
+    // Flash blanc sur la cible touchée — disque centré sur la case.
+    const flashAlpha = flashingEntities.get(entity.id)
+    if (flashAlpha !== undefined) {
+      ctx.save()
+      ctx.globalAlpha = flashAlpha
+      ctx.fillStyle   = '#ffffff'
+      ctx.beginPath()
+      ctx.arc(screenX, screenY, 20, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.restore()
+    }
   }
+}
+
+/**
+ * Dessine les chiffres de dégâts flottants au-dessus des entités touchées.
+ * Appelé après renderEntities pour que les chiffres passent par-dessus les sprites.
+ */
+export function renderDamageNumbers(
+  ctx: CanvasRenderingContext2D,
+  numbers: ActiveDamageNumber[],
+  entities: Entity[],
+  origin: ScreenPos,
+): void {
+  if (numbers.length === 0) return
+  ctx.save()
+  ctx.font         = 'bold 14px monospace'
+  ctx.textAlign    = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.lineWidth    = 3
+  ctx.strokeStyle  = '#000000'
+  for (const num of numbers) {
+    const entity = entities.find(e => e.id === num.entityId)
+    if (!entity) continue
+    const { screenX, screenY } = gridToScreen(entity.position, origin)
+    const y = screenY - 30 + num.dy
+    ctx.globalAlpha = num.alpha
+    ctx.strokeText(`-${num.value}`, screenX, y)
+    ctx.fillStyle = '#ff4444'
+    ctx.fillText(`-${num.value}`, screenX, y)
+  }
+  ctx.restore()
 }
 
 // ---------------------------------------------------------------------------

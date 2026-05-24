@@ -4,7 +4,8 @@ import { getSpell, getSpellTargetCells } from '../core/spells'
 import { getCell } from '../core/grid'
 import { applyAction } from '../core/reducer'
 import { getAIAction } from '../core/ai'
-import { renderGrid, renderHighlights, renderSpellRange, renderEntities, spritesReady, type PlayerDirection } from './render/gridRenderer'
+import { renderGrid, renderHighlights, renderSpellRange, renderEntities, renderDamageNumbers, spritesReady, type PlayerDirection } from './render/gridRenderer'
+import { startDamageNumber, startFlash, tickEffects, getActiveDamageNumbers, getFlashingEntities } from './effects'
 import { computeOrigin, screenToGrid } from './render/projection'
 import { buildPath, startAnimation, tickAnimations, getVisualPosition, getCurrentSegment } from './animation'
 
@@ -29,9 +30,9 @@ let gameState: GameState = {
     { id: 'player-1', name: 'Kirito', team: 'player',
       position: { x: 1, y: 1 }, hp: 100, maxHp: 100, ap: 6, maxAp: 6, mp: 3, maxMp: 3 },
     { id: 'enemy-1', name: 'Mob A', team: 'enemy', creatureType: 'sanglier',
-      position: { x: 4, y: 1 }, hp: 40, maxHp: 40, ap: 4, maxAp: 4, mp: 2, maxMp: 2 },
+      position: { x: 4, y: 1 }, hp: 40, maxHp: 40, ap: 6, maxAp: 6, mp: 2, maxMp: 2 },
     { id: 'enemy-2', name: 'Mob B', team: 'enemy', creatureType: 'sanglier',
-      position: { x: 5, y: 7 }, hp: 40, maxHp: 40, ap: 4, maxAp: 4, mp: 2, maxMp: 2 },
+      position: { x: 5, y: 7 }, hp: 40, maxHp: 40, ap: 6, maxAp: 6, mp: 2, maxMp: 2 },
   ],
   currentEntityId: 'player-1',
   turn: 1,
@@ -118,6 +119,20 @@ function initEntityDirections(): void {
   }
 }
 
+/**
+ * Compare l'état avant/après un sort pour détecter les entités qui ont perdu des PV
+ * et déclencher les effets visuels correspondants (chiffre flottant + flash).
+ */
+function triggerHitEffects(prev: GameState, next: GameState): void {
+  const now = performance.now()
+  for (const entity of next.entities) {
+    const before = prev.entities.find(e => e.id === entity.id)
+    if (!before || entity.hp >= before.hp) continue
+    startDamageNumber(entity.id, before.hp - entity.hp, now)
+    startFlash(entity.id, now)
+  }
+}
+
 function refreshReachable(): void {
   const mover = currentEntity()
   reachable = getReachableCells(gameState.grid, mover, gameState.entities, mover.mp)
@@ -174,10 +189,13 @@ function runAIStep(): void {
   }
 
   // USE_SPELL et END_TURN : pas d'animation, délai fixe pour que le joueur voit l'action.
+  const prevState = gameState
   gameState = applyAction(gameState, action)
+  if (action.type === 'USE_SPELL') triggerHitEffects(prevState, gameState)
   refreshReachable()
   refreshSpellRange()
   render()
+  if (action.type === 'USE_SPELL') startRenderLoop()  // anime les effets visuels en parallèle
 
   if (gameState.status !== 'ongoing') {
     aiTurnActive = false
@@ -225,15 +243,22 @@ function startRenderLoop(): void {
 }
 
 function animationLoop(now: number): void {
-  const stillActive = tickAnimations(now)
+  const animsActive   = tickAnimations(now)
+  const effectsActive = tickEffects(now)
   render()
-  if (stillActive) {
+
+  // La callback IA se déclenche dès que les animations de déplacement sont terminées,
+  // sans attendre la fin des effets visuels (chiffres flottants, flash).
+  if (!animsActive && pendingAfterAnimation !== null) {
+    const cb = pendingAfterAnimation
+    pendingAfterAnimation = null
+    cb()
+  }
+
+  if (animsActive || effectsActive) {
     rafId = requestAnimationFrame(animationLoop)
   } else {
     rafId = null
-    const cb = pendingAfterAnimation
-    pendingAfterAnimation = null
-    cb?.()
   }
 }
 
@@ -261,7 +286,10 @@ function render(): void {
     if (seg) entityDirections.set(entity.id, directionFromPath([seg.from, seg.to]))
   }
 
-  renderEntities(ctx, getVisualEntities(), origin, entityDirections)
+  const visualEntities    = getVisualEntities()
+  const flashingEntities  = getFlashingEntities(now)
+  renderEntities(ctx, visualEntities, origin, entityDirections, flashingEntities)
+  renderDamageNumbers(ctx, getActiveDamageNumbers(now), visualEntities, origin)
   renderHUD(ctx, currentEntity())
   renderOverlay()
 }
@@ -447,9 +475,10 @@ canvas.addEventListener('click', (e) => {
       type: 'USE_SPELL', entityId: gameState.currentEntityId, spellId: activeSpellId, target: pos,
     })
     if (gameState !== prevState) {
+      triggerHitEffects(prevState, gameState)
       refreshReachable()
       refreshSpellRange()
-      render()
+      startRenderLoop()  // la boucle RAF gère le rendu + l'animation des effets
     }
   }
 })
