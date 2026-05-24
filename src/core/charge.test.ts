@@ -185,3 +185,77 @@ describe('charge — validations', () => {
     expect(hero.ap).toBe(6 - SPELL.apCost)
   })
 })
+
+// ---------------------------------------------------------------------------
+// Dégâts d'impact
+// ---------------------------------------------------------------------------
+
+describe('charge — dégâts d\'impact', () => {
+  const IMPACT = 10  // impactDamage défini dans charge.json
+
+  it('inflige les dégâts d\'impact à l\'ennemi sur la case devant le point d\'arrivée', () => {
+    // Héros en (1,2), ennemi en (4,2). Dash maxDistance=2 → s'arrête en (3,2), case devant = (4,2).
+    const grid = makeGrid(6, 6)
+    const mob = enemy('mob', 4, 2)
+    const state = makeState([caster(1, 2), mob], grid, 'hero')
+    const result = tryApplySpell(state, 'hero', SPELL, { x: 5, y: 2 })
+    expect(result.valid).toBe(true)
+    if (!result.valid) return
+    const hero = result.nextState.entities.find(e => e.id === 'hero')!
+    const mobAfter = result.nextState.entities.find(e => e.id === 'mob')!
+    expect(hero.position).toEqual({ x: 3, y: 2 })   // a bien avancé de 2
+    expect(mobAfter.hp).toBe(mob.hp - IMPACT)         // a subi les dégâts
+  })
+
+  it('ennemi juste devant (dash bloqué à 0 case) : position inchangée, dégâts quand même si ennemi sur la case devant', () => {
+    // Héros en (1,2), ennemi en (2,2). Dash bloqué dès la 1ère case → reste en (1,2).
+    // Case devant la position finale (1,2) dans direction +x = (2,2) → ennemi → impactDamage.
+    const grid = makeGrid(6, 6)
+    const mob = enemy('mob', 2, 2)
+    const state = makeState([caster(1, 2), mob], grid, 'hero')
+    const result = tryApplySpell(state, 'hero', SPELL, { x: 4, y: 2 })
+    expect(result.valid).toBe(true)
+    if (!result.valid) return
+    const hero = result.nextState.entities.find(e => e.id === 'hero')!
+    const mobAfter = result.nextState.entities.find(e => e.id === 'mob')!
+    expect(hero.position).toEqual({ x: 1, y: 2 })   // n'a pas bougé
+    expect(mobAfter.hp).toBe(mob.hp - IMPACT)         // mais l'ennemi est quand même touché
+  })
+
+  it('charge dans le vide (aucune entité devant) : pas de dégâts', () => {
+    const grid = makeGrid(6, 6)
+    const state = makeState([caster(1, 2)], grid, 'hero')
+    const result = tryApplySpell(state, 'hero', SPELL, { x: 4, y: 2 })
+    expect(result.valid).toBe(true)
+    if (!result.valid) return
+    const hero = result.nextState.entities.find(e => e.id === 'hero')!
+    expect(hero.position).toEqual({ x: 3, y: 2 })   // a avancé
+    // aucune entité → aucun dégât possible, test passe si pas d'erreur
+  })
+
+  it('charge stoppée par un mur : pas de dégâts (mur ≠ entité adverse)', () => {
+    // Héros en (1,2), mur en (3,2). Dash s'arrête en (2,2). Case devant = (3,2) = mur, pas d'entité.
+    const grid = makeGrid(6, 6, ['3,2'])
+    const state = makeState([caster(1, 2)], grid, 'hero')
+    const result = tryApplySpell(state, 'hero', SPELL, { x: 4, y: 2 })
+    expect(result.valid).toBe(true)
+    if (!result.valid) return
+    const hero = result.nextState.entities.find(e => e.id === 'hero')!
+    expect(hero.position).toEqual({ x: 2, y: 2 })
+    // seul le héros dans nextState, aucun PV à vérifier
+    expect(result.nextState.entities.length).toBe(1)
+  })
+
+  it('allié sur la case devant : n\'est pas touché', () => {
+    // Héros en (1,2), allié en (4,2). Dash s'arrête en (3,2), case devant = (4,2) = allié.
+    const ally: Entity = { id: 'ally', name: 'Ally', team: 'player',
+      position: { x: 4, y: 2 }, hp: 50, maxHp: 50, ap: 4, maxAp: 4, mp: 3, maxMp: 3 }
+    const grid = makeGrid(6, 6)
+    const state = makeState([caster(1, 2), ally], grid, 'hero')
+    const result = tryApplySpell(state, 'hero', SPELL, { x: 5, y: 2 })
+    expect(result.valid).toBe(true)
+    if (!result.valid) return
+    const allyAfter = result.nextState.entities.find(e => e.id === 'ally')!
+    expect(allyAfter.hp).toBe(ally.hp)   // allié non touché
+  })
+})

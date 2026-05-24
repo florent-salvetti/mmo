@@ -114,7 +114,7 @@ export function tryApplySpell(
 function applyEffect(state: GameState, casterId: string, target: Position, effect: SpellEffect): GameState {
   switch (effect.type) {
     case 'damage': return applyDamage(state, target, effect.value)
-    case 'dash':   return applyDash(state, casterId, target, effect.maxDistance)
+    case 'dash':   return applyDash(state, casterId, target, effect.maxDistance, effect.impactDamage)
   }
 }
 
@@ -135,7 +135,13 @@ function applyDamage(state: GameState, target: Position, value: number): GameSta
  * (case non walkable ou entité vivante).
  * Si la première case est déjà bloquée, le lanceur ne bouge pas (PA quand même dépensés).
  */
-function applyDash(state: GameState, casterId: string, target: Position, maxDistance: number): GameState {
+function applyDash(
+  state: GameState,
+  casterId: string,
+  target: Position,
+  maxDistance: number,
+  impactDamage: number,
+): GameState {
   const caster = state.entities.find(e => e.id === casterId)
   if (!caster) return state
 
@@ -158,12 +164,22 @@ function applyDash(state: GameState, casterId: string, target: Position, maxDist
     landY = ny
   }
 
-  if (landX === caster.position.x && landY === caster.position.y) return state
+  let result: GameState = (landX !== caster.position.x || landY !== caster.position.y)
+    ? {
+        ...state,
+        entities: state.entities.map(e =>
+          e.id === casterId ? { ...e, position: { x: landX, y: landY } } : e,
+        ),
+      }
+    : state
 
-  return {
-    ...state,
-    entities: state.entities.map(e =>
-      e.id === casterId ? { ...e, position: { x: landX, y: landY } } : e,
-    ),
+  if (impactDamage > 0) {
+    const impactPos = { x: landX + stepX, y: landY + stepY }
+    const hasAdversary = result.entities.some(
+      e => e.hp > 0 && e.team !== caster.team && e.position.x === impactPos.x && e.position.y === impactPos.y,
+    )
+    if (hasAdversary) result = applyDamage(result, impactPos, impactDamage)
   }
+
+  return result
 }

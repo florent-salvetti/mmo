@@ -91,7 +91,7 @@ export type Action =
 /** Un effet de sort (union discriminée, extensible). */
 export type DamageEffect = { type: 'damage'; value: number }
 /** Déplace le lanceur en ligne droite dans la direction de la cible (distance Manhattan <= maxDistance). */
-export type DashEffect   = { type: 'dash';   maxDistance: number }
+export type DashEffect   = { type: 'dash';   maxDistance: number; impactDamage: number }
 export type SpellEffect  = DamageEffect | DashEffect
 
 /** Définition statique d'un sort, chargée depuis data/spells/*.json. */
