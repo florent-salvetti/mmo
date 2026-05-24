@@ -307,6 +307,7 @@ canvas.addEventListener('click', (e) => {
       type: 'USE_SPELL', entityId: gameState.currentEntityId, spellId: PLAYER_SPELL_ID, target: pos,
     })
     if (gameState !== prevState) {
+      refreshReachable()
       refreshSpellRange()
       render()
     }
