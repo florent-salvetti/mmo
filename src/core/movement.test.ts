@@ -183,6 +183,36 @@ describe('getReachableCells', () => {
     expect(pos6).toContain('2,0')
   })
 
+  it('un ennemi mort (hp=0) ne bloque pas le passage', () => {
+    // Ligne : (0,0) mover | (1,0) ennemi mort | (2,0) libre
+    // Un ennemi vivant bloquerait (1,0) et (2,0) ; mort, il ne bloque rien.
+    const grid  = makeGrid(3, 1)
+    const mover = makeEntity('m', 0, 0, 'player')
+    const dead  = { ...makeEntity('e', 1, 0, 'enemy'), hp: 0 }
+    const pos   = positions(getReachableCells(grid, mover, [dead], 3))
+    expect(pos).toContain('1,0')  // case de l'ennemi mort : traversable
+    expect(pos).toContain('2,0')  // case derrière : accessible
+  })
+
+  it('un ennemi mort ne bloque pas non plus sa case comme destination', () => {
+    // Contraste avec un ennemi vivant qui rend sa case inaccessible :
+    // ici le mort doit être une destination valide.
+    const grid  = makeGrid(3, 1)
+    const mover = makeEntity('m', 0, 0, 'player')
+    const dead  = { ...makeEntity('e', 1, 0, 'enemy'), hp: 0 }
+    const pos   = positions(getReachableCells(grid, mover, [dead], 1))
+    expect(pos).toContain('1,0')  // peut s'arrêter sur la case du mort
+  })
+
+  it('un allié mort ne bloque plus sa case comme destination', () => {
+    // Un allié vivant interdit de s'y arrêter ; mort, sa case est libre.
+    const grid  = makeGrid(3, 1)
+    const mover = makeEntity('m', 0, 0, 'player')
+    const dead  = { ...makeEntity('a', 1, 0, 'player'), hp: 0 }
+    const pos   = positions(getReachableCells(grid, mover, [dead], 1))
+    expect(pos).toContain('1,0')  // peut s'arrêter sur la case de l'allié mort
+  })
+
 })
 
 // ---------------------------------------------------------------------------

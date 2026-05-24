@@ -29,7 +29,7 @@ export function getAIAction(state: GameState, entityId: string): Action {
   const entity = state.entities.find(e => e.id === entityId)
   if (!entity) return { type: 'END_TURN', entityId }
 
-  const players = state.entities.filter(e => e.team === 'player')
+  const players = state.entities.filter(e => e.team === 'player' && e.hp > 0)
   if (players.length === 0) return { type: 'END_TURN', entityId }
 
   const nearest = closestTo(entity, players)

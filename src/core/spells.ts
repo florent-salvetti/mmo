@@ -110,7 +110,7 @@ function applyDamage(state: GameState, target: Position, value: number): GameSta
   return {
     ...state,
     entities: state.entities.map(e =>
-      e.position.x === target.x && e.position.y === target.y
+      e.position.x === target.x && e.position.y === target.y && e.hp > 0
         ? { ...e, hp: Math.max(0, e.hp - value) }
         : e,
     ),

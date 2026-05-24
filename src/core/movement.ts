@@ -29,17 +29,17 @@ export function getReachableCells(
   entities: Entity[],
   mp: number,
 ): ReachableCell[] {
-  // Positions des ennemis : bloquent le passage.
+  // Positions des ennemis vivants : bloquent le passage.
   const enemyPos = new Set(
     entities
-      .filter(e => e.id !== mover.id && e.team !== mover.team)
+      .filter(e => e.id !== mover.id && e.team !== mover.team && e.hp > 0)
       .map(e => posKey(e.position)),
   )
 
-  // Positions de toutes les autres entités : empêchent de s'y arrêter.
+  // Positions de toutes les autres entités vivantes : empêchent de s'y arrêter.
   const occupiedPos = new Set(
     entities
-      .filter(e => e.id !== mover.id)
+      .filter(e => e.id !== mover.id && e.hp > 0)
       .map(e => posKey(e.position)),
   )
 

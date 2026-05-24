@@ -90,6 +90,7 @@ export function renderEntities(
   origin: ScreenPos,
 ): void {
   for (const entity of entities) {
+    if (entity.hp <= 0) continue
     const { screenX, screenY } = gridToScreen(entity.position, origin)
     const radius = 10
     const fill   = entity.team === 'player' ? '#56cfe1' : '#ef233c'

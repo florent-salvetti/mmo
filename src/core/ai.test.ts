@@ -222,6 +222,43 @@ describe('getAIAction — sélection de cible', () => {
 })
 
 // ---------------------------------------------------------------------------
+// Entités mortes ignorées
+// ---------------------------------------------------------------------------
+
+describe('getAIAction — entités mortes ignorées', () => {
+
+  it('n\'attaque pas un joueur mort (hp=0)', () => {
+    // Joueur mort adjacent — ne doit pas être ciblé (END_TURN faute de cible vivante)
+    const enemy      = makeEntity('e', 5, 5, 'enemy', 6, 0)
+    const deadPlayer = { ...makeEntity('p', 5, 4), hp: 0 }
+    const action     = getAIAction(makeState([enemy, deadPlayer]), 'e')
+    expect(action.type).toBe('END_TURN')  // aucune cible vivante
+  })
+
+  it('cible le joueur vivant et ignore le joueur mort même s\'il est plus proche', () => {
+    // Joueur mort adjacent (dist=1), joueur vivant plus loin (dist=2, hors portée sort)
+    // → pas d'attaque possible, l'IA se déplace vers le vivant
+    const enemy      = makeEntity('e', 5, 5, 'enemy', 0, 3)
+    const deadPlayer = { ...makeEntity('pDead', 5, 4), hp: 0 }
+    const livePlayer = makeEntity('pLive', 5, 7)
+    const action     = getAIAction(makeState([enemy, deadPlayer, livePlayer]), 'e')
+    // L'IA doit avancer vers pLive (seul vivant), pas rester sur place
+    expect(action.type).toBe('MOVE')
+    if (action.type !== 'MOVE') return
+    expect(action.to.y).toBeGreaterThan(5)  // avance vers y=7
+  })
+
+  it('END_TURN si tous les joueurs sont morts', () => {
+    const enemy  = makeEntity('e', 5, 5, 'enemy', 6, 3)
+    const dead1  = { ...makeEntity('p1', 5, 4), hp: 0 }
+    const dead2  = { ...makeEntity('p2', 5, 6), hp: 0 }
+    const action = getAIAction(makeState([enemy, dead1, dead2]), 'e')
+    expect(action.type).toBe('END_TURN')
+  })
+
+})
+
+// ---------------------------------------------------------------------------
 // Contournement des obstacles (bug Manhattan vs BFS réel)
 // ---------------------------------------------------------------------------
 
