@@ -237,10 +237,24 @@ function runAIStep(): void {
     return
   }
 
-  // USE_SPELL et END_TURN : pas d'animation, délai fixe pour que le joueur voit l'action.
+  // USE_SPELL et END_TURN : pas d'animation de déplacement, délai fixe pour que le joueur voit l'action.
   const prevState = gameState
   gameState = applyAction(gameState, action)
-  if (action.type === 'USE_SPELL') triggerHitEffects(prevState, gameState)
+  if (action.type === 'USE_SPELL') {
+    triggerHitEffects(prevState, gameState)
+    // Orienter le lanceur vers sa cible (charge → direction du mouvement ; sinon → direction vers la cible).
+    const prevCaster = prevState.entities.find(e => e.id === action.entityId)
+    const nextCaster = gameState.entities.find(e => e.id === action.entityId)
+    if (prevCaster && nextCaster &&
+        (prevCaster.position.x !== nextCaster.position.x ||
+         prevCaster.position.y !== nextCaster.position.y)) {
+      entityDirections.set(action.entityId, directionFromPath(
+        buildDashAnimPath(prevCaster.position, nextCaster.position),
+      ))
+    } else if (prevCaster) {
+      entityDirections.set(action.entityId, directionTo(prevCaster.position, action.target))
+    }
+  }
   refreshReachable()
   refreshSpellRange()
   render()
@@ -561,9 +575,13 @@ canvas.addEventListener('click', (e) => {
         (prevCaster.position.x !== nextCaster.position.x ||
          prevCaster.position.y !== nextCaster.position.y)
       ) {
+        // Charge : le lanceur s'est déplacé → orienter dans la direction du mouvement.
         const dashAnimPath = buildDashAnimPath(prevCaster.position, nextCaster.position)
         entityDirections.set(entityId, directionFromPath(dashAnimPath))
         startAnimation(entityId, dashAnimPath, performance.now())
+      } else if (prevCaster) {
+        // Sort sans déplacement (coup-epee, tir-arc) : tourner vers la case cible.
+        entityDirections.set(entityId, directionTo(prevCaster.position, pos))
       }
 
       refreshReachable()
