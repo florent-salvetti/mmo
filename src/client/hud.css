@@ -1,0 +1,313 @@
+/* ================================================================
+   HUD Spell Bar — dark fantasy neon style
+   Overlay sur la bande basse du canvas (y = 460→600)
+   ================================================================ */
+
+/* --- Variables de thème ----------------------------------------- */
+.hud-spellbar {
+  --hud-ap:      #4dd9ff;
+  --hud-mp:      #ffcf4d;
+  --hud-hp:      #4dff9a;
+  --hud-danger:  #ff3a8c;
+  --hud-bg:      rgba(8, 12, 28, 0.82);
+  --hud-border:  rgba(77, 217, 255, 0.22);
+  --hud-text-1:  #c8d4f0;
+  --hud-text-2:  #5a6480;
+  --hud-glow-ap: 0 0 8px rgba(77, 217, 255, 0.6);
+  --hud-glow-mp: 0 0 8px rgba(255, 207, 77, 0.6);
+}
+
+/* --- Wrapper : couvre toute la bande basse ----------------------- */
+.hud-spellbar {
+  position:        absolute;
+  bottom:          0;
+  left:            0;
+  width:           100%;
+  height:          140px;
+  pointer-events:  none;        /* les clics traversent vers le canvas */
+  display:         flex;
+  align-items:     center;
+  justify-content: center;
+  /* fond dégradé très subtil pour séparer visuellement la bande */
+  background: linear-gradient(to top, rgba(5, 8, 20, 0.72) 0%, transparent 100%);
+}
+
+/* --- Panneau interactif ------------------------------------------ */
+.hud-inner {
+  pointer-events:   auto;       /* les éléments du panneau captent les clics */
+  display:          flex;
+  align-items:      center;
+  gap:              0;
+  padding:          0 20px;
+  height:           88px;
+  background:       var(--hud-bg);
+  border:           1px solid var(--hud-border);
+  border-bottom:    none;       /* colle visuellement au bas de la bande */
+  backdrop-filter:  blur(14px);
+  position:         relative;
+  /* coins biseautés façon "clip-path" */
+  clip-path: polygon(
+    10px 0%, calc(100% - 10px) 0%,
+    100% 10px, 100% 100%,
+    0% 100%, 0% 10px
+  );
+}
+
+/* Ligne décorative horizontale en haut du panneau */
+.hud-inner::before {
+  content:    "";
+  position:   absolute;
+  top:        0;
+  left:       10px;
+  right:      10px;
+  height:     1px;
+  background: linear-gradient(
+    to right,
+    transparent,
+    var(--hud-ap) 20%,
+    rgba(77, 217, 255, 0.4) 50%,
+    var(--hud-ap) 80%,
+    transparent
+  );
+}
+
+/* --- Séparateurs verticaux --------------------------------------- */
+.hud-vsep {
+  width:      1px;
+  height:     56px;
+  background: linear-gradient(to bottom, transparent, var(--hud-border), transparent);
+  margin:     0 16px;
+  flex-shrink: 0;
+}
+
+/* --- Ressources (PA / PM) --------------------------------------- */
+.hud-resources {
+  display:         flex;
+  flex-direction:  column;
+  align-items:     center;
+  justify-content: center;
+  gap:             10px;
+  min-width:       80px;
+}
+
+.hud-res {
+  display:     flex;
+  align-items: center;
+  gap:         8px;
+}
+
+.hud-res-label {
+  font-family: 'Rajdhani', sans-serif;
+  font-weight: 600;
+  font-size:   11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color:       var(--hud-text-2);
+  min-width:   20px;
+}
+
+.hud-res-val {
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 700;
+  font-size:   22px;
+  line-height: 1;
+}
+
+.hud-res-val.ap { color: var(--hud-ap); text-shadow: var(--hud-glow-ap); }
+.hud-res-val.mp { color: var(--hud-mp); text-shadow: var(--hud-glow-mp); }
+
+/* Jauge (mini barre sous le chiffre) */
+.hud-res-bar {
+  width:         36px;
+  height:        4px;
+  background:    rgba(255,255,255,0.08);
+  border-radius: 2px;
+  overflow:      hidden;
+}
+
+.hud-res-bar-fill {
+  height: 100%;
+  border-radius: 2px;
+}
+
+.hud-res-bar-fill.ap {
+  width:      100%;   /* valeur statique — sera remplacée dynamiquement plus tard */
+  background: var(--hud-ap);
+  box-shadow: var(--hud-glow-ap);
+}
+
+.hud-res-bar-fill.mp {
+  width:      100%;
+  background: var(--hud-mp);
+  box-shadow: var(--hud-glow-mp);
+}
+
+/* --- Zone sorts -------------------------------------------------- */
+.hud-spells {
+  display: flex;
+  gap:     10px;
+  align-items: center;
+}
+
+/* Bouton de sort individuel */
+.hud-spell {
+  position:    relative;
+  width:       64px;
+  height:      64px;
+  background:  rgba(77, 217, 255, 0.06);
+  border:      1px solid rgba(77, 217, 255, 0.25);
+  cursor:      pointer;
+  transition:  background 0.15s, border-color 0.15s;
+  display:     flex;
+  flex-direction: column;
+  align-items:    center;
+  justify-content: center;
+  gap:         2px;
+  /* coin biseauté en haut-gauche et bas-droite */
+  clip-path: polygon(
+    8px 0%, 100% 0%,
+    100% calc(100% - 8px),
+    calc(100% - 8px) 100%,
+    0% 100%, 0% 8px
+  );
+  padding-bottom: 12px; /* espace pour le nom en bas */
+}
+
+.hud-spell:hover {
+  background:   rgba(77, 217, 255, 0.14);
+  border-color: rgba(77, 217, 255, 0.55);
+}
+
+/* Raccourci clavier (coin haut-gauche) */
+.hs-key {
+  position:    absolute;
+  top:         4px;
+  left:        5px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size:   9px;
+  font-weight: 700;
+  color:       var(--hud-text-2);
+  line-height: 1;
+}
+
+/* Coût en PA (coin haut-droite) */
+.hs-cost {
+  position:    absolute;
+  top:         4px;
+  right:       5px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size:   10px;
+  font-weight: 700;
+  color:       var(--hud-ap);
+  line-height: 1;
+}
+
+/* Icône (emoji ou image) */
+.hs-icon {
+  font-size:   22px;
+  line-height: 1;
+  margin-top:  6px;
+}
+
+/* Nom du sort */
+.hs-name {
+  position:    absolute;
+  bottom:      4px;
+  left:        0;
+  right:       0;
+  text-align:  center;
+  font-family: 'Rajdhani', sans-serif;
+  font-size:   9px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color:       var(--hud-text-1);
+  line-height: 1;
+}
+
+/* Indicateur de recharge (masqué par défaut) */
+.hs-cd {
+  position:    absolute;
+  inset:       0;
+  background:  rgba(8, 12, 28, 0.70);
+  display:     flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'JetBrains Mono', monospace;
+  font-size:   18px;
+  font-weight: 700;
+  color:       var(--hud-text-2);
+  clip-path: inherit;
+}
+
+.hs-cd.hidden { display: none; }
+
+/* Sort en cooldown : assombri */
+.hud-spell.on-cooldown {
+  background:   rgba(10, 14, 30, 0.70);
+  border-color: rgba(90, 100, 128, 0.25);
+  cursor:       default;
+}
+
+/* PA insuffisants : teinte danger */
+.hud-spell.no-ap {
+  border-color: rgba(255, 58, 140, 0.30);
+  cursor:       not-allowed;
+}
+
+.hud-spell.no-ap .hs-cost { color: var(--hud-danger); }
+
+/* Sort actif/sélectionné */
+.hud-spell.active {
+  background:   rgba(77, 217, 255, 0.18);
+  border-color: var(--hud-ap);
+  box-shadow:   0 0 12px rgba(77, 217, 255, 0.35) inset,
+                0 0 8px  rgba(77, 217, 255, 0.25);
+}
+
+/* --- Bouton Fin de tour ----------------------------------------- */
+.hud-end-turn {
+  position:    relative;
+  padding:     0 24px;
+  height:      48px;
+  background:  rgba(255, 58, 140, 0.08);
+  border:      1px solid rgba(255, 58, 140, 0.35);
+  cursor:      pointer;
+  transition:  background 0.15s, border-color 0.15s;
+  display:     flex;
+  align-items: center;
+  justify-content: center;
+  gap:         8px;
+  /* trapèze asymétrique */
+  clip-path: polygon(
+    12px 0%, 100% 0%,
+    calc(100% - 12px) 100%,
+    0% 100%
+  );
+  min-width:   120px;
+  white-space: nowrap;
+}
+
+.hud-end-turn:hover {
+  background:   rgba(255, 58, 140, 0.18);
+  border-color: rgba(255, 58, 140, 0.70);
+}
+
+.hud-end-turn-label {
+  font-family:    'Cinzel', serif;
+  font-weight:    600;
+  font-size:      11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color:          var(--hud-danger);
+}
+
+.hud-end-turn-key {
+  font-family: 'JetBrains Mono', monospace;
+  font-size:   10px;
+  font-weight: 700;
+  color:       var(--hud-text-2);
+  padding:     2px 5px;
+  border:      1px solid var(--hud-text-2);
+  line-height: 1;
+}
