@@ -81,21 +81,41 @@ function isCurrentEntityEnemy(): boolean {
 }
 
 /**
- * Déduit la direction visuelle depuis le dernier segment d'un chemin.
- * Basé sur la projection isométrique gridToScreen :
- *   x+1 → bas-droite écran  → SE  |  x-1 → haut-gauche → NO
- *   y+1 → bas-gauche écran  → SO  |  y-1 → haut-droite  → NE
+ * Déduit la direction visuelle de `from` vers `to`.
+ * Projection isométrique : x+1→SE, x-1→NO, y+1→SO, y-1→NE.
+ * dx est prioritaire sur dy (même logique que le déplacement sur grille).
  */
-function directionFromPath(path: Position[]): PlayerDirection {
-  if (path.length < 2) return 'SE'
-  const from = path[path.length - 2]!
-  const to   = path[path.length - 1]!
-  const dx   = to.x - from.x
-  const dy   = to.y - from.y
+function directionTo(from: Position, to: Position): PlayerDirection {
+  const dx = to.x - from.x
+  const dy = to.y - from.y
   if (dx > 0) return 'SE'
   if (dx < 0) return 'NO'
   if (dy > 0) return 'SO'
   return 'NE'
+}
+
+/** Déduit la direction visuelle depuis le dernier segment d'un chemin. */
+function directionFromPath(path: Position[]): PlayerDirection {
+  if (path.length < 2) return 'SE'
+  return directionTo(path[path.length - 2]!, path[path.length - 1]!)
+}
+
+/**
+ * Initialise l'orientation de chaque entité vers l'adversaire vivant le plus proche
+ * (distance Manhattan). Appelé une seule fois au démarrage, avant le premier rendu.
+ */
+function initEntityDirections(): void {
+  for (const entity of gameState.entities) {
+    if (entity.hp <= 0) continue
+    const opponents = gameState.entities.filter(e => e.team !== entity.team && e.hp > 0)
+    if (opponents.length === 0) continue
+    const nearest = opponents.reduce((best, e) =>
+      Math.abs(e.position.x - entity.position.x) + Math.abs(e.position.y - entity.position.y) <
+      Math.abs(best.position.x - entity.position.x) + Math.abs(best.position.y - entity.position.y)
+        ? e : best,
+    )
+    entityDirections.set(entity.id, directionTo(entity.position, nearest.position))
+  }
 }
 
 function refreshReachable(): void {
@@ -438,6 +458,7 @@ canvas.addEventListener('click', (e) => {
 // Démarrage
 // ---------------------------------------------------------------------------
 
+initEntityDirections()
 refreshReachable()
 refreshSpellRange()
 spritesReady.then(() => render())
