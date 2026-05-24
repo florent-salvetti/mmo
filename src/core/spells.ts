@@ -21,6 +21,43 @@ export function getSpell(id: string): Spell | undefined {
 }
 
 /**
+ * Calcule la case d'arrivée d'un dash depuis la position du lanceur dans la direction
+ * (stepX, stepY), en s'arrêtant avant tout obstacle (mur ou entité vivante).
+ * Retourne la position du lanceur lui-même si aucun mouvement n'est possible.
+ *
+ * Miroir de la logique de applyDash — utilisé par le client pour afficher les cases
+ * ciblables sans avoir à dupliquer le calcul.
+ */
+export function getDashDestination(
+  state: GameState,
+  casterId: string,
+  stepX: number,
+  stepY: number,
+  maxDistance: number,
+): Position {
+  const caster = state.entities.find(e => e.id === casterId)
+  if (!caster) return { x: 0, y: 0 }
+
+  let landX = caster.position.x
+  let landY = caster.position.y
+
+  for (let step = 1; step <= maxDistance; step++) {
+    const nx = caster.position.x + stepX * step
+    const ny = caster.position.y + stepY * step
+    const cell = getCell(state.grid, { x: nx, y: ny })
+    if (!cell || !cell.walkable) break
+    const occupied = state.entities.some(
+      e => e.hp > 0 && e.id !== casterId && e.position.x === nx && e.position.y === ny,
+    )
+    if (occupied) break
+    landX = nx
+    landY = ny
+  }
+
+  return { x: landX, y: landY }
+}
+
+/**
  * Retourne toutes les cases ciblables par un sort depuis la position du lanceur.
  * Filtre par portée [range.min, range.max] et, si needsLineOfSight, par ligne de vue.
  * N'exige pas que la case soit walkable : on peut cibler une case occupée par un ennemi.

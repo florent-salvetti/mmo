@@ -1,6 +1,6 @@
 import type { Cell, Entity, GameState, Position } from '../shared/types'
 import { getReachableCells } from '../core/movement'
-import { getSpell, getSpellTargetCells } from '../core/spells'
+import { getSpell, getSpellTargetCells, getDashDestination } from '../core/spells'
 import { getCell } from '../core/grid'
 import { applyAction } from '../core/reducer'
 import { getAIAction } from '../core/ai'
@@ -55,12 +55,14 @@ type UIMode = 'move' | 'spell'
 
 const SPELL_COUP_EPEE  = 'coup-epee'
 const SPELL_TIR_ARC    = 'tir-arc'
+const SPELL_CHARGE     = 'charge'
 const AI_STEP_DELAY_MS = 500  // pause entre chaque action IA (visible à l'écran)
 
 // Zones des boutons dans le canvas (coordonnées pixels).
 const COUP_EPEE_BTN = { x:  16, y: 56, w: 140, h: 22 }
 const TIR_ARC_BTN   = { x: 164, y: 56, w: 130, h: 22 }
-const END_TURN_BTN  = { x: 302, y: 56, w: 100, h: 22 }
+const CHARGE_BTN    = { x: 302, y: 56, w: 105, h: 22 }
+const END_TURN_BTN  = { x: 414, y: 56, w: 100, h: 22 }
 
 let mode:          UIMode  = 'move'
 let activeSpellId: string  = SPELL_COUP_EPEE  // sort actif quand mode === 'spell'
@@ -139,7 +141,46 @@ function refreshReachable(): void {
     .map(r => r.cell)
 }
 
+/**
+ * Pour la charge, les cases ciblables ne sont pas les cases dans la portée du sort
+ * mais les 4 destinations cardinales réelles (calculées par getDashDestination).
+ * Si le lanceur est bloqué immédiatement dans une direction mais qu'un ennemi est
+ * sur la case adjacente, on surligne quand même cette case (charge sur place = impact).
+ */
+function refreshChargeTargets(): void {
+  const entity = currentEntity()
+  const spell = getSpell(SPELL_CHARGE)
+  if (!spell) { spellRange = []; return }
+  const dashEffect = spell.effects.find(e => e.type === 'dash')
+  if (!dashEffect || dashEffect.type !== 'dash') { spellRange = []; return }
+
+  const maxDistance = dashEffect.maxDistance
+  const targets: Cell[] = []
+
+  for (const [stepX, stepY] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as [number, number][]) {
+    const dest = getDashDestination(gameState, entity.id, stepX, stepY, maxDistance)
+    if (dest.x !== entity.position.x || dest.y !== entity.position.y) {
+      // Le lanceur peut avancer : on surligne la case d'arrivée.
+      const cell = getCell(gameState.grid, dest)
+      if (cell) targets.push(cell)
+    } else {
+      // Bloqué immédiatement — on surligne quand même si un ennemi adjacent peut être frappé.
+      const adjPos = { x: entity.position.x + stepX, y: entity.position.y + stepY }
+      const hasEnemy = gameState.entities.some(
+        e => e.hp > 0 && e.team !== entity.team &&
+             e.position.x === adjPos.x && e.position.y === adjPos.y,
+      )
+      if (hasEnemy) {
+        const cell = getCell(gameState.grid, adjPos)
+        if (cell) targets.push(cell)
+      }
+    }
+  }
+  spellRange = targets
+}
+
 function refreshSpellRange(): void {
+  if (activeSpellId === SPELL_CHARGE) { refreshChargeTargets(); return }
   const spell = getSpell(activeSpellId)
   if (!spell) { spellRange = []; return }
   spellRange = getSpellTargetCells(gameState.grid, currentEntity(), spell)
@@ -351,7 +392,8 @@ function renderHUD(ctx: CanvasRenderingContext2D, entity: Entity): void {
   ctx.lineWidth = 1.5
   for (const { id, btn, label } of [
     { id: SPELL_COUP_EPEE, btn: COUP_EPEE_BTN, label: "Coup d'epee (3 PA)" },
-    { id: SPELL_TIR_ARC,   btn: TIR_ARC_BTN,   label: 'Tir a l\'arc (4 PA)' },
+    { id: SPELL_TIR_ARC,   btn: TIR_ARC_BTN,   label: "Tir a l'arc (4 PA)" },
+    { id: SPELL_CHARGE,    btn: CHARGE_BTN,    label: 'Charge (2 PA)' },
   ]) {
     const isActive = mode === 'spell' && activeSpellId === id
     ctx.fillStyle   = aiTurnActive ? '#141414' : (isActive ? '#5a2a14' : '#1e2e1e')
@@ -387,6 +429,23 @@ function renderHUD(ctx: CanvasRenderingContext2D, entity: Entity): void {
   }
 }
 
+/**
+ * Construit le chemin d'animation pour un déplacement en ligne droite (dash).
+ * Chaque case intermédiaire est listée pour que la vitesse soit identique
+ * à un déplacement normal (100 ms par case).
+ */
+function buildDashAnimPath(from: Position, to: Position): Position[] {
+  const stepX = Math.sign(to.x - from.x)
+  const stepY = Math.sign(to.y - from.y)
+  const path: Position[] = [from]
+  let cur = from
+  while (cur.x !== to.x || cur.y !== to.y) {
+    cur = { x: cur.x + stepX, y: cur.y + stepY }
+    path.push({ ...cur })
+  }
+  return path
+}
+
 // ---------------------------------------------------------------------------
 // Événements souris
 // ---------------------------------------------------------------------------
@@ -420,6 +479,7 @@ canvas.addEventListener('click', (e) => {
   for (const { id, btn } of [
     { id: SPELL_COUP_EPEE, btn: COUP_EPEE_BTN },
     { id: SPELL_TIR_ARC,   btn: TIR_ARC_BTN },
+    { id: SPELL_CHARGE,    btn: CHARGE_BTN },
   ]) {
     if (clickX >= btn.x && clickX <= btn.x + btn.w && clickY >= btn.y && clickY <= btn.y + btn.h) {
       if (mode === 'spell' && activeSpellId === id) {
@@ -470,12 +530,27 @@ canvas.addEventListener('click', (e) => {
     startRenderLoop()
   } else {
     // Mode sort : envoyer USE_SPELL. Si l'état a changé, le sort a été appliqué.
+    const entityId  = gameState.currentEntityId
     const prevState = gameState
     gameState = applyAction(gameState, {
-      type: 'USE_SPELL', entityId: gameState.currentEntityId, spellId: activeSpellId, target: pos,
+      type: 'USE_SPELL', entityId, spellId: activeSpellId, target: pos,
     })
     if (gameState !== prevState) {
       triggerHitEffects(prevState, gameState)
+
+      // Si le lanceur s'est physiquement déplacé (ex. charge), animer le glissement.
+      const prevCaster = prevState.entities.find(e => e.id === entityId)
+      const nextCaster = gameState.entities.find(e => e.id === entityId)
+      if (
+        prevCaster && nextCaster &&
+        (prevCaster.position.x !== nextCaster.position.x ||
+         prevCaster.position.y !== nextCaster.position.y)
+      ) {
+        const dashAnimPath = buildDashAnimPath(prevCaster.position, nextCaster.position)
+        entityDirections.set(entityId, directionFromPath(dashAnimPath))
+        startAnimation(entityId, dashAnimPath, performance.now())
+      }
+
       refreshReachable()
       refreshSpellRange()
       startRenderLoop()  // la boucle RAF gère le rendu + l'animation des effets
