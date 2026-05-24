@@ -48,6 +48,17 @@ const ctx    = canvas.getContext('2d')!
 const origin = computeOrigin(GRID_W, GRID_H, canvas)
 
 // ---------------------------------------------------------------------------
+// Références DOM du HUD HTML (cachées une fois au démarrage)
+// ---------------------------------------------------------------------------
+
+const hudApVal        = document.querySelector<HTMLElement>('.hud-res-val.ap')
+const hudApBar        = document.querySelector<HTMLElement>('.hud-res-bar-fill.ap')
+const hudMpVal        = document.querySelector<HTMLElement>('.hud-res-val.mp')
+const hudMpBar        = document.querySelector<HTMLElement>('.hud-res-bar-fill.mp')
+const hudSpellButtons = document.querySelectorAll<HTMLButtonElement>('.hud-spell[data-spell-id]')
+const hudEndTurnBtn   = document.querySelector<HTMLButtonElement>('.hud-end-turn')
+
+// ---------------------------------------------------------------------------
 // État de l'UI
 // ---------------------------------------------------------------------------
 
@@ -287,6 +298,53 @@ function startAITurn(): void {
 // Rendu
 // ---------------------------------------------------------------------------
 
+/**
+ * Met à jour le HUD HTML pour refléter l'état courant du jeu.
+ * Appelé à chaque render() — idempotent, rapide (lecture/écriture DOM minimale).
+ */
+function updateHudDOM(): void {
+  const entity     = currentEntity()
+  const gameOver   = gameState.status !== 'ongoing'
+  const allDisabled = aiTurnActive || gameOver
+
+  // Jauges PA
+  if (hudApVal) hudApVal.textContent = String(entity.ap)
+  if (hudApBar) hudApBar.style.width  = `${(entity.ap / entity.maxAp) * 100}%`
+
+  // Jauges PM
+  if (hudMpVal) hudMpVal.textContent = String(entity.mp)
+  if (hudMpBar) hudMpBar.style.width  = `${(entity.mp / entity.maxMp) * 100}%`
+
+  // Boutons de sort
+  for (const btn of hudSpellButtons) {
+    const spellId = btn.dataset['spellId']!
+    const spell   = getSpell(spellId)
+    const cd      = entity.cooldowns?.[spellId] ?? 0
+    const onCd    = cd > 0
+    const noAp    = !allDisabled && !onCd && spell !== undefined && entity.ap < spell.apCost
+    const isActive = !allDisabled && !onCd && mode === 'spell' && activeSpellId === spellId
+
+    // Coût PA réel depuis les données du sort
+    const costEl = btn.querySelector<HTMLElement>('.hs-cost')
+    if (costEl && spell) costEl.textContent = String(spell.apCost)
+
+    // Indicateur de cooldown (chiffre + masquage)
+    const cdEl = btn.querySelector<HTMLElement>('.hs-cd')
+    if (cdEl) {
+      cdEl.textContent = String(cd)
+      cdEl.classList.toggle('hidden', !onCd)
+    }
+
+    btn.classList.toggle('active',      isActive)
+    btn.classList.toggle('on-cooldown', onCd)
+    btn.classList.toggle('no-ap',       noAp)
+    btn.disabled = allDisabled || onCd
+  }
+
+  // Bouton Fin de tour
+  if (hudEndTurnBtn) hudEndTurnBtn.disabled = allDisabled
+}
+
 /** Remplace la position des entités animées par leur position visuelle interpolée. */
 function getVisualEntities(): Entity[] {
   const now = performance.now()
@@ -355,6 +413,7 @@ function render(): void {
   renderDamageNumbers(ctx, getActiveDamageNumbers(now), visualEntities, origin)
   renderHUD(ctx, currentEntity())
   renderOverlay()
+  updateHudDOM()
 }
 
 function renderOverlay(): void {
