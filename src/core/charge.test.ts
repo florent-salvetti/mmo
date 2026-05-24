@@ -146,6 +146,27 @@ describe('charge — mode libre (déplacement)', () => {
     const hero = result.nextState.entities.find(e => e.id === 'hero')!
     expect(hero.position).toEqual({ x: 1, y: 2 })
   })
+
+  it('cible à 1 case : s\'arrête exactement à 1 case même si maxDistance = 3', () => {
+    // Terrain entièrement libre, mais le joueur choisit de ne faire qu'1 pas.
+    const grid = makeGrid(8, 8)
+    const state = makeState([caster(1, 2)], grid, 'hero')
+    const result = tryApplySpell(state, 'hero', SPELL, { x: 2, y: 2 })
+    expect(result.valid).toBe(true)
+    if (!result.valid) return
+    const hero = result.nextState.entities.find(e => e.id === 'hero')!
+    expect(hero.position).toEqual({ x: 2, y: 2 })
+  })
+
+  it('cible à 2 cases : s\'arrête exactement à 2 cases même si maxDistance = 3', () => {
+    const grid = makeGrid(8, 8)
+    const state = makeState([caster(1, 2)], grid, 'hero')
+    const result = tryApplySpell(state, 'hero', SPELL, { x: 3, y: 2 })
+    expect(result.valid).toBe(true)
+    if (!result.valid) return
+    const hero = result.nextState.entities.find(e => e.id === 'hero')!
+    expect(hero.position).toEqual({ x: 3, y: 2 })
+  })
 })
 
 // ---------------------------------------------------------------------------

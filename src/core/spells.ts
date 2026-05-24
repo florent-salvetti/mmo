@@ -230,6 +230,8 @@ function applyDash(
     if (occupied) break
     landX = nx
     landY = ny
+    // Mode libre : s'arrêter exactement sur la case cible (respect de la distance choisie).
+    if (!isOffensive && nx === target.x && ny === target.y) break
   }
 
   // Appliquer le déplacement si le lanceur a avancé.
