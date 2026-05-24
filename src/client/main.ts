@@ -4,9 +4,9 @@ import { getSpell, getSpellTargetCells } from '../core/spells'
 import { getCell } from '../core/grid'
 import { applyAction } from '../core/reducer'
 import { getAIAction } from '../core/ai'
-import { renderGrid, renderHighlights, renderSpellRange, renderEntities, spritesReady } from './render/gridRenderer'
+import { renderGrid, renderHighlights, renderSpellRange, renderEntities, spritesReady, type PlayerDirection } from './render/gridRenderer'
 import { computeOrigin, screenToGrid } from './render/projection'
-import { buildPath, startAnimation, tickAnimations, getVisualPosition } from './animation'
+import { buildPath, startAnimation, tickAnimations, getVisualPosition, getCurrentSegment } from './animation'
 
 // ---------------------------------------------------------------------------
 // État initial de démonstration
@@ -28,9 +28,9 @@ let gameState: GameState = {
   entities: [
     { id: 'player-1', name: 'Kirito', team: 'player',
       position: { x: 1, y: 1 }, hp: 100, maxHp: 100, ap: 6, maxAp: 6, mp: 3, maxMp: 3 },
-    { id: 'enemy-1', name: 'Mob A', team: 'enemy',
+    { id: 'enemy-1', name: 'Mob A', team: 'enemy', creatureType: 'sanglier',
       position: { x: 4, y: 1 }, hp: 40, maxHp: 40, ap: 4, maxAp: 4, mp: 2, maxMp: 2 },
-    { id: 'enemy-2', name: 'Mob B', team: 'enemy',
+    { id: 'enemy-2', name: 'Mob B', team: 'enemy', creatureType: 'sanglier',
       position: { x: 5, y: 7 }, hp: 40, maxHp: 40, ap: 4, maxAp: 4, mp: 2, maxMp: 2 },
   ],
   currentEntityId: 'player-1',
@@ -61,9 +61,11 @@ const COUP_EPEE_BTN = { x:  16, y: 56, w: 140, h: 22 }
 const TIR_ARC_BTN   = { x: 164, y: 56, w: 130, h: 22 }
 const END_TURN_BTN  = { x: 302, y: 56, w: 100, h: 22 }
 
-let mode:          UIMode          = 'move'
-let activeSpellId: string          = SPELL_COUP_EPEE  // sort actif quand mode === 'spell'
+let mode:          UIMode  = 'move'
+let activeSpellId: string  = SPELL_COUP_EPEE  // sort actif quand mode === 'spell'
 let hoveredPos:    Position | null = null
+// Direction visuelle courante de chaque entité — initialisée au premier déplacement (défaut 'SE' à la lecture).
+const entityDirections = new Map<string, PlayerDirection>()
 let reachable:     Cell[]          = []
 let spellRange:    Cell[]          = []
 let aiTurnActive:  boolean         = false
@@ -76,6 +78,24 @@ function currentEntity(): Entity {
 
 function isCurrentEntityEnemy(): boolean {
   return currentEntity().team === 'enemy'
+}
+
+/**
+ * Déduit la direction visuelle depuis le dernier segment d'un chemin.
+ * Basé sur la projection isométrique gridToScreen :
+ *   x+1 → bas-droite écran  → SE  |  x-1 → haut-gauche → NO
+ *   y+1 → bas-gauche écran  → SO  |  y-1 → haut-droite  → NE
+ */
+function directionFromPath(path: Position[]): PlayerDirection {
+  if (path.length < 2) return 'SE'
+  const from = path[path.length - 2]!
+  const to   = path[path.length - 1]!
+  const dx   = to.x - from.x
+  const dy   = to.y - from.y
+  if (dx > 0) return 'SE'
+  if (dx < 0) return 'NO'
+  if (dy > 0) return 'SO'
+  return 'NE'
 }
 
 function refreshReachable(): void {
@@ -105,6 +125,7 @@ function runAIStep(): void {
 
   // Le MOVE est animé : on applique l'état immédiatement, puis on attend la fin de l'animation.
   if (action.type === 'MOVE') {
+    const prevState      = gameState
     const fromPos        = currentEntity().position
     const blockedForAnim = new Set(
       gameState.entities
@@ -112,9 +133,17 @@ function runAIStep(): void {
         .map(e => `${e.position.x},${e.position.y}`),
     )
     gameState = applyAction(gameState, action)
+    if (gameState === prevState) {
+      // Garde-fou : l'IA ne devrait jamais proposer un déplacement illégal,
+      // mais si ça arrive on relance le cycle plutôt que de bloquer.
+      setTimeout(runAIStep, AI_STEP_DELAY_MS)
+      return
+    }
     refreshReachable()
     refreshSpellRange()
-    startAnimation(action.entityId, buildPath(gameState.grid, fromPos, action.to, blockedForAnim), performance.now())
+    const aiPath = buildPath(gameState.grid, fromPos, action.to, blockedForAnim)
+    entityDirections.set(action.entityId, directionFromPath(aiPath))
+    startAnimation(action.entityId, aiPath, performance.now())
     pendingAfterAnimation = () => {
       if (gameState.status !== 'ongoing') { aiTurnActive = false; render(); return }
       if (isCurrentEntityEnemy()) setTimeout(runAIStep, 0)
@@ -203,7 +232,16 @@ function render(): void {
     }
   }
 
-  renderEntities(ctx, getVisualEntities(), origin)
+  // Orientation dynamique : à chaque frame, on lit le segment actif de chaque entité animée.
+  // Si pas d'animation, la direction reste celle du dernier déplacement (direction de repos).
+  const now = performance.now()
+  for (const entity of gameState.entities) {
+    if (entity.hp <= 0) continue
+    const seg = getCurrentSegment(entity.id, now)
+    if (seg) entityDirections.set(entity.id, directionFromPath([seg.from, seg.to]))
+  }
+
+  renderEntities(ctx, getVisualEntities(), origin, entityDirections)
   renderHUD(ctx, currentEntity())
   renderOverlay()
 }
@@ -366,6 +404,7 @@ canvas.addEventListener('click', (e) => {
   if (!getCell(gameState.grid, pos)) return
 
   if (mode === 'move') {
+    const prevState      = gameState
     const fromPos        = currentEntity().position
     const entityId       = gameState.currentEntityId
     const blockedForAnim = new Set(
@@ -374,9 +413,12 @@ canvas.addEventListener('click', (e) => {
         .map(e => `${e.position.x},${e.position.y}`),
     )
     gameState = applyAction(gameState, { type: 'MOVE', entityId, to: pos })
+    if (gameState === prevState) return  // déplacement refusé par le core : on ne fait rien
     refreshReachable()
     refreshSpellRange()
-    startAnimation(entityId, buildPath(gameState.grid, fromPos, pos, blockedForAnim), performance.now())
+    const path = buildPath(gameState.grid, fromPos, pos, blockedForAnim)
+    entityDirections.set(entityId, directionFromPath(path))
+    startAnimation(entityId, path, performance.now())
     startRenderLoop()
   } else {
     // Mode sort : envoyer USE_SPELL. Si l'état a changé, le sort a été appliqué.

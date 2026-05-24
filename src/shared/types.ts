@@ -43,6 +43,8 @@ export type Entity = {
   /** Points de mouvement : budget pour se déplacer ce tour-ci. */
   mp: number
   maxMp: number
+  /** Type de créature (ex. 'sanglier') — détermine les sprites à charger. Absent = cercle de fallback. */
+  creatureType?: string
 }
 
 // ---------------------------------------------------------------------------

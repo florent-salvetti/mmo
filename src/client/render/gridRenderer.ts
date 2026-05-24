@@ -6,30 +6,71 @@ const COLOR_BLOCKED     = '#1e2030'
 const COLOR_STROKE      = '#4a9e8a'
 const COLOR_STROKE_DARK = '#2a3050'
 
-// ─── Réglages du sprite joueur — modifie ces deux lignes pour caler le perso ─
-/** Largeur du sprite en pixels — change cette valeur pour agrandir ou rétrécir le perso. */
+// ─── Réglages des sprites — modifie ces constantes pour caler les entités ──────────
+/** Largeur du sprite joueur en pixels. */
 const PLAYER_SPRITE_W = 80
-/** Décalage vertical en pixels — positif = descend le perso, négatif = le monte. */
-const PLAYER_SPRITE_Y_OFFSET = 9
-// ──────────────────────────────────────────────────────────────────────────────
+/** Décalage vertical joueur en pixels — positif = descend, négatif = monte. */
+const PLAYER_SPRITE_Y_OFFSET = 16
 
-// Chargement unique au démarrage du module.
-// Guard typeof : en environnement test Node, Image n'existe pas → playerSpriteReady reste false
-// → le code retombe systématiquement sur le cercle cyan, les tests passent sans modification.
-const playerSprite: HTMLImageElement | null =
-  typeof Image !== 'undefined' ? new Image() : null
-let playerSpriteReady = false
+/** Largeur du sprite ennemi en pixels. */
+const ENEMY_SPRITE_W = 68
+/** Décalage vertical ennemi en pixels — positif = descend, négatif = monte. */
+const ENEMY_SPRITE_Y_OFFSET = 18
+// ───────────────────────────────────────────────────────────────────────────────────
+
+/** Direction visuelle courante d'une entité, déduite de son dernier déplacement sur la grille. */
+export type PlayerDirection = 'NE' | 'NO' | 'SE' | 'SO'
+
+const DIRECTIONS: PlayerDirection[] = ['NE', 'NO', 'SE', 'SO']
+
+// Préfixes de sprites connus — ajouter un type de créature ici pour le charger au démarrage.
+const KNOWN_CREATURE_PREFIXES = ['player', 'sanglier']
+
+// Sprites chargés avec succès : src → HTMLImageElement.
+// Guard typeof Image : en environnement test Node, Image n'est pas défini
+// → la Map reste vide → getSprite() retourne null → fallback cercle → les tests passent.
+const loadedSprites = new Map<string, HTMLImageElement>()
+
+function loadSprite(src: string): Promise<void> {
+  if (typeof Image === 'undefined') return Promise.resolve()
+  return new Promise(resolve => {
+    const img = new Image()
+    img.onload  = () => { loadedSprites.set(src, img); resolve() }
+    img.onerror = () => resolve()  // absent ou réseau → fallback en cascade, on démarre quand même
+    img.src = src
+  })
+}
+
+/** Chemin du sprite directionnel : /sprites/sanglier_ne.png, /sprites/player_so.png, etc. */
+function spritePath(prefix: string, dir: PlayerDirection): string {
+  return `/sprites/${prefix}_${dir.toLowerCase()}.png`
+}
+
+/** Chemin du sprite de fallback sans direction : /sprites/player.png, etc. */
+function fallbackSpritePath(prefix: string): string {
+  return `/sprites/${prefix}.png`
+}
 
 /**
- * Promesse résolue quand tous les sprites sont chargés (ou en erreur → fallback).
+ * Promesse résolue quand tous les sprites sont chargés (ou ont échoué).
  * Attendre cette promesse avant le premier render() évite le flash du cercle de fallback.
  */
-export const spritesReady: Promise<void> = new Promise(resolve => {
-  if (!playerSprite) { resolve(); return }
-  playerSprite.onload  = () => { playerSpriteReady = true; resolve() }
-  playerSprite.onerror = () => resolve()  // image absente → fallback cercle, on démarre quand même
-  playerSprite.src     = '/sprites/player.png'
-})
+export const spritesReady: Promise<void> = Promise.all(
+  KNOWN_CREATURE_PREFIXES.flatMap(prefix => [
+    loadSprite(fallbackSpritePath(prefix)),
+    ...DIRECTIONS.map(dir => loadSprite(spritePath(prefix, dir))),
+  ]),
+).then(() => undefined)
+
+/**
+ * Retourne le sprite à afficher pour un préfixe et une direction.
+ * Cascade : directionnel → prefix.png → null (→ cercle de fallback).
+ */
+function getSprite(prefix: string, dir: PlayerDirection): HTMLImageElement | null {
+  return loadedSprites.get(spritePath(prefix, dir))
+    ?? loadedSprites.get(fallbackSpritePath(prefix))
+    ?? null
+}
 
 /** Dessine toute la grille isométrique sur le canvas. */
 export function renderGrid(
@@ -108,37 +149,44 @@ export function renderSpellRange(
   }
 }
 
-/** Dessine toutes les entités vivantes avec leur barre de PV. */
+/**
+ * Dessine toutes les entités vivantes avec leur barre de PV.
+ * `directions` associe l'id de chaque entité à sa direction visuelle courante.
+ * Les entités absentes de la map utilisent 'SE' par défaut.
+ */
 export function renderEntities(
   ctx: CanvasRenderingContext2D,
   entities: Entity[],
   origin: ScreenPos,
+  directions: Map<string, PlayerDirection> = new Map(),
 ): void {
   for (const entity of entities) {
     if (entity.hp <= 0) continue
 
     const { screenX, screenY } = gridToScreen(entity.position, origin)
+    const dir    = directions.get(entity.id) ?? 'SE'
+    const prefix = entity.team === 'player' ? 'player' : (entity.creatureType ?? null)
     let hpBarY: number
 
-    if (entity.team === 'player' && playerSpriteReady && playerSprite) {
-      // Sprite joueur : bas-centre de l'image posé sur le centre de la case.
-      const spriteH = PLAYER_SPRITE_W * playerSprite.naturalHeight / playerSprite.naturalWidth
-      const spriteY = screenY - spriteH + PLAYER_SPRITE_Y_OFFSET
-      ctx.drawImage(playerSprite, screenX - PLAYER_SPRITE_W / 2, spriteY, PLAYER_SPRITE_W, spriteH)
-      hpBarY = spriteY - 4
+    const spriteW  = entity.team === 'player' ? PLAYER_SPRITE_W   : ENEMY_SPRITE_W
+    const yOffset  = entity.team === 'player' ? PLAYER_SPRITE_Y_OFFSET : ENEMY_SPRITE_Y_OFFSET
+
+    if (prefix !== null) {
+      const sprite = getSprite(prefix, dir)
+      if (sprite) {
+        const spriteH = spriteW * sprite.naturalHeight / sprite.naturalWidth
+        const spriteY = screenY - spriteH + yOffset
+        ctx.drawImage(sprite, screenX - spriteW / 2, spriteY, spriteW, spriteH)
+        hpBarY = spriteY - 4
+      } else {
+        const cy = screenY + yOffset
+        drawEntityCircle(ctx, screenX, cy, entity.team)
+        hpBarY = cy - 10 - 6
+      }
     } else {
-      // Cercle (ennemis, ou fallback joueur si sprite non encore chargé).
-      const radius = 10
-      const fill   = entity.team === 'player' ? '#56cfe1' : '#ef233c'
-      const stroke = entity.team === 'player' ? '#caf0f8' : '#ffd6d6'
-      ctx.beginPath()
-      ctx.arc(screenX, screenY, radius, 0, Math.PI * 2)
-      ctx.fillStyle   = fill
-      ctx.strokeStyle = stroke
-      ctx.lineWidth   = 2
-      ctx.fill()
-      ctx.stroke()
-      hpBarY = screenY - radius - 6
+      const cy = screenY + yOffset
+      drawEntityCircle(ctx, screenX, cy, entity.team)
+      hpBarY = cy - 10 - 6
     }
 
     // Barre de PV positionnée juste au-dessus du sprite ou du cercle.
@@ -172,6 +220,21 @@ function drawTile(ctx: CanvasRenderingContext2D, cell: Cell, origin: ScreenPos):
   ctx.fillStyle   = cell.walkable ? COLOR_WALKABLE : COLOR_BLOCKED
   ctx.strokeStyle = cell.walkable ? COLOR_STROKE   : COLOR_STROKE_DARK
   ctx.lineWidth   = 1
+  ctx.fill()
+  ctx.stroke()
+}
+
+function drawEntityCircle(
+  ctx: CanvasRenderingContext2D,
+  screenX: number,
+  screenY: number,
+  team: string,
+): void {
+  ctx.beginPath()
+  ctx.arc(screenX, screenY, 10, 0, Math.PI * 2)
+  ctx.fillStyle   = team === 'player' ? '#56cfe1' : '#ef233c'
+  ctx.strokeStyle = team === 'player' ? '#caf0f8' : '#ffd6d6'
+  ctx.lineWidth   = 2
   ctx.fill()
   ctx.stroke()
 }

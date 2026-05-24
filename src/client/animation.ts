@@ -82,6 +82,24 @@ export function tickAnimations(now: number): boolean {
 }
 
 /**
+ * Retourne le segment du chemin actuellement parcouru par l'entité animée.
+ * Permet de connaître la direction instantanée pour choisir le bon sprite à chaque frame.
+ * Retourne null si l'entité n'est pas en cours d'animation.
+ */
+export function getCurrentSegment(
+  entityId: string,
+  now: number,
+): { from: Position; to: Position } | null {
+  const anim = active.get(entityId)
+  if (!anim) return null
+
+  const numSteps = anim.path.length - 1
+  const stepIdx  = Math.min(Math.floor((now - anim.startTime) / MS_PER_STEP), numSteps - 1)
+
+  return { from: anim.path[stepIdx]!, to: anim.path[stepIdx + 1]! }
+}
+
+/**
  * Retourne la position visuelle interpolée d'une entité (coordonnées de grille fractionnaires).
  * Compatible directement avec gridToScreen — pas besoin de conversion supplémentaire.
  * Retourne null si l'entité n'est pas en cours d'animation.
