@@ -6,6 +6,20 @@ const COLOR_BLOCKED     = '#1e2030'
 const COLOR_STROKE      = '#4a9e8a'
 const COLOR_STROKE_DARK = '#2a3050'
 
+// Largeur du sprite joueur en pixels (~1.5 tuiles). La hauteur est déduite du ratio de l'image.
+const PLAYER_SPRITE_W = 96
+
+// Chargement unique au démarrage du module.
+// Guard typeof : en environnement test Node, Image n'existe pas → playerSpriteReady reste false
+// → le code retombe systématiquement sur le cercle cyan, les tests passent sans modification.
+const playerSprite: HTMLImageElement | null =
+  typeof Image !== 'undefined' ? new Image() : null
+let playerSpriteReady = false
+if (playerSprite) {
+  playerSprite.onload = () => { playerSpriteReady = true }
+  playerSprite.src    = '/sprites/player.png'
+}
+
 /** Dessine toute la grille isométrique sur le canvas. */
 export function renderGrid(
   ctx: CanvasRenderingContext2D,
@@ -83,7 +97,7 @@ export function renderSpellRange(
   }
 }
 
-/** Dessine toutes les entités comme des cercles colorés avec une barre de PV. */
+/** Dessine toutes les entités vivantes avec leur barre de PV. */
 export function renderEntities(
   ctx: CanvasRenderingContext2D,
   entities: Entity[],
@@ -91,32 +105,39 @@ export function renderEntities(
 ): void {
   for (const entity of entities) {
     if (entity.hp <= 0) continue
+
     const { screenX, screenY } = gridToScreen(entity.position, origin)
-    const radius = 10
-    const fill   = entity.team === 'player' ? '#56cfe1' : '#ef233c'
-    const stroke = entity.team === 'player' ? '#caf0f8' : '#ffd6d6'
+    let hpBarY: number
 
-    // Cercle de l'entité
-    ctx.beginPath()
-    ctx.arc(screenX, screenY, radius, 0, Math.PI * 2)
-    ctx.fillStyle   = fill
-    ctx.strokeStyle = stroke
-    ctx.lineWidth   = 2
-    ctx.fill()
-    ctx.stroke()
+    if (entity.team === 'player' && playerSpriteReady && playerSprite) {
+      // Sprite joueur : bas-centre de l'image posé sur le centre de la case.
+      const spriteH = PLAYER_SPRITE_W * playerSprite.naturalHeight / playerSprite.naturalWidth
+      ctx.drawImage(playerSprite, screenX - PLAYER_SPRITE_W / 2, screenY - spriteH, PLAYER_SPRITE_W, spriteH)
+      hpBarY = screenY - spriteH - 4
+    } else {
+      // Cercle (ennemis, ou fallback joueur si sprite non encore chargé).
+      const radius = 10
+      const fill   = entity.team === 'player' ? '#56cfe1' : '#ef233c'
+      const stroke = entity.team === 'player' ? '#caf0f8' : '#ffd6d6'
+      ctx.beginPath()
+      ctx.arc(screenX, screenY, radius, 0, Math.PI * 2)
+      ctx.fillStyle   = fill
+      ctx.strokeStyle = stroke
+      ctx.lineWidth   = 2
+      ctx.fill()
+      ctx.stroke()
+      hpBarY = screenY - radius - 6
+    }
 
-    // Barre de PV au-dessus du cercle
+    // Barre de PV positionnée juste au-dessus du sprite ou du cercle.
     const ratio  = entity.hp / entity.maxHp
     const barW   = 20
     const barH   = 3
-    const barX   = screenX - barW / 2
-    const barY   = screenY - radius - 6
     const barClr = ratio > 0.6 ? '#4caf50' : ratio > 0.3 ? '#ffc107' : '#f44336'
-
     ctx.fillStyle = '#222233'
-    ctx.fillRect(barX, barY, barW, barH)
+    ctx.fillRect(screenX - barW / 2, hpBarY, barW, barH)
     ctx.fillStyle = barClr
-    ctx.fillRect(barX, barY, barW * ratio, barH)
+    ctx.fillRect(screenX - barW / 2, hpBarY, barW * ratio, barH)
   }
 }
 
