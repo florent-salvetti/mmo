@@ -1,0 +1,64 @@
+{
+  "id": "combat-02",
+  "width": 10,
+  "height": 10,
+  "obstacles": [
+    { "x": 1, "y": 4, "type": "hole" },
+    { "x": 2, "y": 4, "type": "hole" },
+    { "x": 3, "y": 4, "type": "hole" },
+    { "x": 6, "y": 2, "type": "cube" },
+    { "x": 7, "y": 2, "type": "cube" },
+    { "x": 6, "y": 7, "type": "cube" },
+    { "x": 7, "y": 7, "type": "cube" },
+    { "x": 7, "y": 6, "type": "cube" }
+  ],
+  "player": {
+    "id": "player-1",
+    "name": "Kirito",
+    "startPosition": { "x": 1, "y": 1 },
+    "hp": 100,
+    "maxHp": 100,
+    "ap": 6,
+    "maxAp": 6,
+    "mp": 3,
+    "maxMp": 3
+  },
+  "enemies": [
+    {
+      "id": "enemy-1",
+      "name": "Sanglier A",
+      "creatureType": "sanglier",
+      "startPosition": { "x": 8, "y": 1 },
+      "hp": 40,
+      "maxHp": 40,
+      "ap": 6,
+      "maxAp": 6,
+      "mp": 2,
+      "maxMp": 2
+    },
+    {
+      "id": "enemy-2",
+      "name": "Sanglier B",
+      "creatureType": "sanglier",
+      "startPosition": { "x": 9, "y": 5 },
+      "hp": 40,
+      "maxHp": 40,
+      "ap": 6,
+      "maxAp": 6,
+      "mp": 2,
+      "maxMp": 2
+    },
+    {
+      "id": "enemy-3",
+      "name": "Sanglier C",
+      "creatureType": "sanglier",
+      "startPosition": { "x": 5, "y": 9 },
+      "hp": 35,
+      "maxHp": 35,
+      "ap": 5,
+      "maxAp": 5,
+      "mp": 3,
+      "maxMp": 3
+    }
+  ]
+}

@@ -62,6 +62,11 @@ export function buildPath(
   return path
 }
 
+/** Vide toutes les animations en cours (utilisé lors d'un changement de map). */
+export function resetAnimations(): void {
+  active.clear()
+}
+
 /** Lance l'animation de déplacement pour une entité. Ignore si le chemin fait moins de 2 cases. */
 export function startAnimation(entityId: string, path: Position[], startTime: number): void {
   if (path.length < 2) return

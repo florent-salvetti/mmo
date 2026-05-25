@@ -1,15 +1,16 @@
 import type { Cell, Entity, GameState, MapDefinition, Position } from '../shared/types'
 import { createGameStateFromMap } from '../core/mapLoader'
 import combat01Raw from '../../data/maps/combat-01.json'
+import combat02Raw from '../../data/maps/combat-02.json'
 import { getReachableCells } from '../core/movement'
 import { getSpell, getSpellTargetCells } from '../core/spells'
 import { getCell } from '../core/grid'
 import { applyAction } from '../core/reducer'
 import { getAIAction } from '../core/ai'
 import { renderGrid, renderHighlights, renderSpellRange, renderEntities, renderCubesAndEntities, renderDamageNumbers, spritesReady, type PlayerDirection } from './render/gridRenderer'
-import { startDamageNumber, startFlash, tickEffects, getActiveDamageNumbers, getFlashingEntities } from './effects'
+import { startDamageNumber, startFlash, tickEffects, getActiveDamageNumbers, getFlashingEntities, resetEffects } from './effects'
 import { computeOrigin, screenToGrid, TILE_WIDTH, TILE_HEIGHT } from './render/projection'
-import { buildPath, startAnimation, tickAnimations, getVisualPosition, getCurrentSegment } from './animation'
+import { buildPath, startAnimation, tickAnimations, getVisualPosition, getCurrentSegment, resetAnimations } from './animation'
 import { getUpcomingTurns } from '../core/turnOrder'
 
 // ---------------------------------------------------------------------------
@@ -866,6 +867,60 @@ mobileBackdrop?.addEventListener('click', () => {
   leftTabBtn?.classList.remove('active')
   rightTabBtn?.classList.remove('active')
   if (mobileBackdrop) mobileBackdrop.style.display = 'none'
+})
+
+// ---------------------------------------------------------------------------
+// Chargement dynamique de map
+// ---------------------------------------------------------------------------
+
+/**
+ * Remplace le combat en cours par celui décrit dans `def`.
+ * Réinitialise toute l'UI et le rendu proprement.
+ */
+function loadMap(def: MapDefinition): void {
+  // Arrêter ce qui est en cours
+  stopTimer()
+  if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null }
+  pendingAfterAnimation = null
+
+  // Nouvel état de jeu
+  gameState = createGameStateFromMap(def)
+
+  // Réinitialiser l'UI
+  mode          = 'move'
+  activeSpellId = SPELL_COUP_EPEE
+  hoveredPos    = null
+  aiTurnActive  = false
+  timeLeft      = TURN_DURATION
+
+  // Vider les données transitoires
+  entityDirections.clear()
+  logEntries.length = 0
+  if (hudLogEntriesEl) hudLogEntriesEl.innerHTML = ''
+  if (hudLogCountEl)   hudLogCountEl.textContent = ''
+  resetEffects()
+  resetAnimations()
+
+  // Réinitialiser les orientations et les cases atteignables
+  initEntityDirections()
+  refreshReachable()
+  refreshSpellRange()
+
+  // Recalculer les dimensions de la grille + rendu initial
+  handleResize()
+
+  // Message d'intro + timer
+  pushLog(`Combat commencé. À <span class="actor">${currentEntity().name}</span> de jouer !`, 'system')
+  startTurnTimer()
+}
+
+// ---------------------------------------------------------------------------
+// Raccourcis clavier — sélection de map
+// ---------------------------------------------------------------------------
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === '1') { loadMap(combat01Raw as unknown as MapDefinition); return }
+  if (e.key === '2') { loadMap(combat02Raw as unknown as MapDefinition); return }
 })
 
 // ---------------------------------------------------------------------------

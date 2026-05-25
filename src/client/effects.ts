@@ -11,6 +11,12 @@ type FlashEffect  = { entityId: string; startTime: number }
 const damages: DamageEffect[] = []
 const flashes: FlashEffect[]  = []
 
+/** Vide tous les effets visuels en cours (utilisé lors d'un changement de map). */
+export function resetEffects(): void {
+  damages.length = 0
+  flashes.length = 0
+}
+
 /** Enregistre un chiffre de dégâts flottant pour une entité. */
 export function startDamageNumber(entityId: string, value: number, startTime: number): void {
   damages.push({ entityId, value, startTime })
