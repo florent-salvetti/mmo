@@ -30,9 +30,21 @@ const ENEMY_SPRITE_Y_OFFSET = 18
 // ───────────────────────────────────────────────────────────────────────────────────
 
 /** Direction visuelle courante d'une entité, déduite de son dernier déplacement sur la grille. */
-export type PlayerDirection = 'NE' | 'NO' | 'SE' | 'SO'
+/**
+ * 4 directions diagonales isométriques — utilisées par le combat et comme base visuelle
+ * pour les ennemis. Nommées d'après la grille (SE = x+1 = bas-droite à l'écran, etc.).
+ * 4 directions droites à l'écran (diagonales sur la grille) — exploration uniquement :
+ *   S  = x+1,y+1  → tout en bas à l'écran
+ *   N  = x-1,y-1  → tout en haut
+ *   E  = x+1,y-1  → tout à droite
+ *   O  = x-1,y+1  → tout à gauche
+ */
+export type PlayerDirection = 'NE' | 'NO' | 'SE' | 'SO' | 'N' | 'S' | 'E' | 'O'
 
+/** Directions 4-voies — sprites ennemis et spritesheets d'attaque Knight. */
 const DIRECTIONS: PlayerDirection[] = ['NE', 'NO', 'SE', 'SO']
+/** Directions 8-voies — spritesheets Idle et Walk Knight. */
+const DIRECTIONS_8: PlayerDirection[] = ['NE', 'NO', 'SE', 'SO', 'N', 'S', 'E', 'O']
 
 // Préfixes de sprites connus — ajouter un type de créature ici pour le charger au démarrage.
 const KNOWN_CREATURE_PREFIXES = ['player', 'sanglier']
@@ -129,8 +141,12 @@ export function resetAttackAnimations(): void {
 }
 
 // Correspondance direction de jeu → numéro de direction du pack Knight.
-// dir1 = SE, dir3 = SO, dir5 = NO, dir7 = NE (vérifié visuellement sur les sprites).
-const KNIGHT_DIR: Record<PlayerDirection, number> = { SE: 7, SO: 1, NO: 3, NE: 5 }
+// Le pack est ordonné dans le sens antihoraire depuis SO :
+//   dir1=SO, dir2=O, dir3=NO, dir4=N, dir5=NE, dir6=E, dir7=SE, dir8=S
+// Les 4 premières (1,3,5,7) sont vérifiées visuellement ; les 4 nouvelles sont déduites.
+const KNIGHT_DIR: Record<PlayerDirection, number> = {
+  SO: 1, O: 2, NO: 3, N: 4, NE: 5, E: 6, SE: 7, S: 8,
+}
 
 function knightIdlePng(dir: PlayerDirection): string {
   return `/sprites/KnightBasic/Idle/Knight_Idle_dir${KNIGHT_DIR[dir]}.png`
@@ -188,9 +204,9 @@ export const spritesReady: Promise<void> = Promise.all([
     loadSprite(fallbackSpritePath(prefix)),
     ...DIRECTIONS.map(dir => loadSprite(spritePath(prefix, dir))),
   ]),
-  ...DIRECTIONS.map(dir => loadSpritesheet(knightIdlePng(dir), knightIdleJson(dir))),
-  ...DIRECTIONS.map(dir => loadSpritesheet(knightWalkPng(dir), knightWalkJson(dir))),
-  ...DIRECTIONS.map(dir => loadSpritesheet(knightAttackPng(dir), knightAttackJson(dir))),
+  ...DIRECTIONS_8.map(dir => loadSpritesheet(knightIdlePng(dir), knightIdleJson(dir))),
+  ...DIRECTIONS_8.map(dir => loadSpritesheet(knightWalkPng(dir), knightWalkJson(dir))),
+  ...DIRECTIONS.map(dir => loadSpritesheet(knightAttackPng(dir), knightAttackJson(dir))),  // attaque : 4 dirs seulement
 ]).then(() => undefined)
 
 /**

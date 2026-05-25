@@ -176,9 +176,8 @@ function isCurrentEntityEnemy(): boolean {
 }
 
 /**
- * Déduit la direction visuelle de `from` vers `to`.
- * Projection isométrique : x+1→SE, x-1→NO, y+1→SO, y-1→NE.
- * dx est prioritaire sur dy (même logique que le déplacement sur grille).
+ * Déduit la direction visuelle de `from` vers `to` — 4 directions (combat).
+ * dx prioritaire sur dy : reproduit la logique cardinale du déplacement de combat.
  */
 function directionTo(from: Position, to: Position): PlayerDirection {
   const dx = to.x - from.x
@@ -189,10 +188,35 @@ function directionTo(from: Position, to: Position): PlayerDirection {
   return 'NE'
 }
 
-/** Déduit la direction visuelle depuis le dernier segment d'un chemin. */
+/**
+ * Déduit la direction visuelle de `from` vers `to` — 8 directions (exploration).
+ * Les diagonales de grille (dx≠0 ET dy≠0) donnent les directions droites à l'écran :
+ *   dx+,dy+ → S (bas)  |  dx-,dy- → N (haut)
+ *   dx+,dy- → E (droite) | dx-,dy+ → O (gauche)
+ */
+function directionTo8(from: Position, to: Position): PlayerDirection {
+  const dx = to.x - from.x
+  const dy = to.y - from.y
+  if (dx > 0 && dy > 0) return 'S'
+  if (dx < 0 && dy < 0) return 'N'
+  if (dx > 0 && dy < 0) return 'E'
+  if (dx < 0 && dy > 0) return 'O'
+  if (dx > 0) return 'SE'
+  if (dx < 0) return 'NO'
+  if (dy > 0) return 'SO'
+  return 'NE'
+}
+
+/** Déduit la direction visuelle depuis le dernier segment d'un chemin — 4 directions (combat). */
 function directionFromPath(path: Position[]): PlayerDirection {
   if (path.length < 2) return 'SE'
   return directionTo(path[path.length - 2]!, path[path.length - 1]!)
+}
+
+/** Déduit la direction visuelle depuis le dernier segment d'un chemin — 8 directions (exploration). */
+function directionFromPath8(path: Position[]): PlayerDirection {
+  if (path.length < 2) return 'SE'
+  return directionTo8(path[path.length - 2]!, path[path.length - 1]!)
 }
 
 /** Bascule le mode de jeu. En exploration : coupe le combat. En combat : relance le tour.
@@ -753,12 +777,17 @@ function render(): void {
   }
 
   // Orientation dynamique : à chaque frame, on lit le segment actif de chaque entité animée.
-  // Si pas d'animation, la direction reste celle du dernier déplacement (direction de repos).
+  // Exploration → 8 directions ; combat → 4 directions (chemins toujours orthogonaux en combat).
   const now = performance.now()
   for (const entity of gameState.entities) {
     if (entity.hp <= 0) continue
     const seg = getCurrentSegment(entity.id, now)
-    if (seg) entityDirections.set(entity.id, directionFromPath([seg.from, seg.to]))
+    if (seg) {
+      const dir = gameMode === 'exploration'
+        ? directionTo8(seg.from, seg.to)
+        : directionTo(seg.from, seg.to)
+      entityDirections.set(entity.id, dir)
+    }
   }
 
   const visualEntities    = getVisualEntities()
@@ -1044,7 +1073,7 @@ function engageCombatGroup(group: MonsterGroup): void {
           e.id === player.id ? { ...e, position: runTarget! } : e
         ),
       }
-      entityDirections.set(player.id, directionFromPath(path))
+      entityDirections.set(player.id, directionFromPath8(path))
       startAnimation(player.id, path, performance.now())
       combatRunActive = true
       pendingAfterAnimation = () => launchCombat(group, player.id)
@@ -1142,7 +1171,7 @@ function handleExplorationClick(pos: Position): void {
       e.id === player.id ? { ...e, position: pos } : e
     ),
   }
-  entityDirections.set(player.id, directionFromPath(path))
+  entityDirections.set(player.id, directionFromPath8(path))
   startAnimation(player.id, path, performance.now())
   startRenderLoop()
 }
