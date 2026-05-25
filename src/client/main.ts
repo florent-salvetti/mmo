@@ -97,7 +97,6 @@ const hudApVal        = document.querySelector<HTMLElement>('.v.ap')
 const hudMpVal        = document.querySelector<HTMLElement>('.v.mp')
 const hudSpellButtons = document.querySelectorAll<HTMLButtonElement>('.spell[data-spell-id]')
 const hudEndTurnBtn   = document.querySelector<HTMLButtonElement>('.end-turn-btn')
-const hudHintEl       = document.querySelector<HTMLElement>('.hud-hint')
 const hudTurnNumEl    = document.querySelector<HTMLElement>('.turn-numval')
 const hudActiveActor  = document.querySelector<HTMLElement>('.active-actor')
 const hudTimerEl      = document.querySelector<HTMLElement>('.turn-timer')
@@ -409,8 +408,9 @@ function runAIStep(): void {
   }
 
   if (action.type === 'END_TURN') {
-    const prevName = prevState.entities.find(e => e.id === prevState.currentEntityId)?.name ?? '?'
-    pushLog(`<span class="target">${prevName}</span> termine son tour.`, 'system')
+    const nextEntity = gameState.entities.find(e => e.id === gameState.currentEntityId)
+    const nextCls = nextEntity?.team === 'enemy' ? 'target' : 'actor'
+    pushLog(`<span class="${nextCls}">${nextEntity?.name ?? '?'}</span> commence son tour.`, 'system')
     if (isCurrentEntityEnemy()) {
       setTimeout(runAIStep, AI_STEP_DELAY_MS)
     } else {
@@ -506,15 +506,14 @@ function updateHudDOM(): void {
     }
 
     btn.classList.toggle('is-selected', isActive)
-    btn.classList.toggle('is-disabled', onCd || noAp || allDisabled)
-    btn.disabled = allDisabled || onCd
+    btn.classList.toggle('is-disabled', !spell || onCd || noAp || allDisabled)
+    btn.disabled = allDisabled || onCd || !spell
   }
 
   // Bouton Fin de tour
   if (hudEndTurnBtn) hudEndTurnBtn.disabled = allDisabled
 
   // Hint contextuel
-  if (hudHintEl) hudHintEl.textContent = computeHintText(entity)
 
   // Numéro de tour
   if (hudTurnNumEl) hudTurnNumEl.textContent = String(gameState.turn).padStart(2, '0')
@@ -663,20 +662,6 @@ function renderOverlay(): void {
   ctx.textBaseline = 'top'
 }
 
-/** Calcule le texte du hint contextuel selon l'état courant du jeu. */
-function computeHintText(entity: Entity): string {
-  if (gameState.status !== 'ongoing') return ''
-  if (aiTurnActive) return `Tour de ${entity.name}…`
-  const spell    = getSpell(activeSpellId)
-  const cdActive = entity.cooldowns?.[activeSpellId] ?? 0
-  const canCast  = spell !== undefined && entity.ap >= spell.apCost && cdActive === 0
-  if (mode === 'move') {
-    return entity.mp === 0 ? 'Plus de PM disponibles' : 'Clic case bleue = déplacer'
-  }
-  if (cdActive > 0) return `En recharge : ${cdActive} tour(s)`
-  return canCast ? 'Clic case orange = lancer' : 'PA insuffisants'
-}
-
 /**
  * Construit le chemin d'animation pour un déplacement en ligne droite (dash).
  * Chaque case intermédiaire est listée pour que la vitesse soit identique
@@ -719,13 +704,14 @@ function selectSpell(spellId: string): void {
 /** Termine le tour du joueur courant. Sans effet pendant le tour ennemi. */
 function doEndTurn(): void {
   if (aiTurnActive) return
-  const prevName = currentEntity().name
   if (timerHandle !== null) { clearInterval(timerHandle); timerHandle = null }
   gameState = applyAction(gameState, { type: 'END_TURN', entityId: gameState.currentEntityId })
   mode = 'move'
   refreshReachable()
   refreshSpellRange()
-  pushLog(`<span class="actor">${prevName}</span> termine son tour.`, 'system')
+  const next = currentEntity()
+  const nextCls = next.team === 'enemy' ? 'target' : 'actor'
+  pushLog(`<span class="${nextCls}">${next.name}</span> commence son tour.`, 'system')
   render()
   if (isCurrentEntityEnemy()) startAITurn()
   else startTurnTimer()

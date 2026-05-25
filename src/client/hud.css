@@ -604,6 +604,7 @@ h1, h2, h3, .display { font-family: "Cinzel", serif; font-weight: 600; letter-sp
   border: 1px solid var(--border-strong);
   border-radius: 6px;
   position: relative;
+  overflow: visible;
   backdrop-filter: blur(10px);
   box-shadow:
     0 0 0 1px var(--primary-soft) inset,
@@ -627,6 +628,7 @@ h1, h2, h3, .display { font-family: "Cinzel", serif; font-weight: 600; letter-sp
   cursor: pointer;
   transition: all 0.18s;
   flex-shrink: 0;
+  overflow: visible;
   clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
 }
 .spell:hover {
@@ -659,14 +661,6 @@ h1, h2, h3, .display { font-family: "Cinzel", serif; font-weight: 600; letter-sp
   color: var(--ap);
   text-shadow: 0 0 4px currentColor;
 }
-.spell-key {
-  position: absolute; bottom: 2px; left: 4px;
-  font-family: "JetBrains Mono", monospace;
-  font-size: 9px;
-  color: var(--text-2);
-  letter-spacing: 0.04em;
-}
-
 /* Cooldown overlay on spell button */
 .hs-cd {
   position: absolute;
@@ -682,38 +676,86 @@ h1, h2, h3, .display { font-family: "Cinzel", serif; font-weight: 600; letter-sp
 }
 .hs-cd.hidden { display: none; }
 
+/* ─── Tooltip de sort ───────────────────────────────────── */
 .spell-tooltip {
   position: absolute;
-  bottom: calc(100% + 12px);
-  left: 50%; transform: translateX(-50%);
-  width: 220px;
-  background: var(--bg-panel-solid);
+  bottom: calc(100% + 16px);
+  left: 50%;
+  transform: translateX(-50%) translateY(8px);
+  width: 230px;
+  background: var(--bg-1);
   border: 1px solid var(--border-strong);
-  border-radius: 4px;
-  padding: 10px;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.5), 0 0 20px -8px var(--primary-glow);
+  border-top: 2px solid var(--primary);
+  border-radius: 6px;
+  padding: 11px 13px 13px;
+  box-shadow:
+    0 20px 48px rgba(0, 0, 0, 0.85),
+    0 0 28px -8px var(--primary-glow);
   pointer-events: none;
-  z-index: 20;
+  z-index: 200;
   opacity: 0;
-  transition: opacity 0.18s;
+  transition: opacity 0.14s ease, transform 0.14s ease;
 }
-.spell:hover .spell-tooltip { opacity: 1; }
+/* Flèche — couche extérieure (bordure) */
+.spell-tooltip::after {
+  content: "";
+  position: absolute;
+  top: 100%; left: 50%;
+  transform: translateX(-50%);
+  border: 8px solid transparent;
+  border-top-color: var(--border-strong);
+}
+/* Flèche — couche intérieure (remplissage) */
+.spell-tooltip::before {
+  content: "";
+  position: absolute;
+  top: 100%; left: 50%;
+  transform: translateX(-50%);
+  margin-top: -2px;
+  border: 7px solid transparent;
+  border-top-color: var(--bg-1);
+  z-index: 1;
+}
+.spell:hover .spell-tooltip {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
 .spell-tt-name {
-  font-family: "Cinzel", serif; font-weight: 700; font-size: 13px;
+  font-family: "Cinzel", serif;
+  font-weight: 700;
+  font-size: 13px;
   color: var(--primary);
-  margin-bottom: 4px;
-  text-shadow: 0 0 8px var(--primary-glow);
+  margin-bottom: 9px;
+  text-shadow: 0 0 12px var(--primary-glow);
+  letter-spacing: 0.04em;
 }
 .spell-tt-meta {
-  display: flex; gap: 10px;
-  font-family: "JetBrains Mono", monospace; font-size: 10px;
-  color: var(--text-2);
-  margin-bottom: 6px;
-  padding-bottom: 6px;
+  display: flex; gap: 5px; flex-wrap: wrap;
+  margin-bottom: 9px;
+  padding-bottom: 9px;
   border-bottom: 1px solid var(--border);
 }
+.spell-tt-meta span {
+  display: inline-flex; align-items: center; gap: 3px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-2);
+  background: var(--primary-soft);
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+  padding: 2px 6px;
+  white-space: nowrap;
+}
 .spell-tt-meta b { color: var(--text-0); font-weight: 700; }
-.spell-tt-desc { font-size: 11px; line-height: 1.4; color: var(--text-1); }
+.spell-tt-desc {
+  font-family: "Rajdhani", sans-serif;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-1);
+}
 
 .end-turn-btn {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -736,11 +778,6 @@ h1, h2, h3, .display { font-family: "Cinzel", serif; font-weight: 600; letter-sp
   text-shadow: 0 0 8px var(--danger-glow);
   box-shadow: 0 0 18px -2px var(--danger-glow);
 }
-.end-turn-btn .label-sub {
-  font-size: 9px; color: var(--text-2); margin-top: 2px;
-  letter-spacing: 0.18em; font-family: "JetBrains Mono", monospace; font-weight: 500;
-}
-
 .pa-indicator {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   margin-right: 6px;
@@ -760,16 +797,6 @@ h1, h2, h3, .display { font-family: "Cinzel", serif; font-weight: 600; letter-sp
 }
 
 /* Contextual hint below spell bar */
-.hud-hint {
-  font-family: "Rajdhani", sans-serif;
-  font-size: 11px;
-  letter-spacing: 0.08em;
-  color: var(--text-2);
-  text-align: center;
-  padding: 3px 0 0;
-  pointer-events: none;
-  min-height: 16px;
-}
 
 /* ─── Mobile collapse: tabs + backdrop + close ─────────── */
 .mobile-tab {
