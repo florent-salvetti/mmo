@@ -7,7 +7,7 @@ import { getSpell, getSpellTargetCells } from '../core/spells'
 import { getCell } from '../core/grid'
 import { applyAction } from '../core/reducer'
 import { getAIAction } from '../core/ai'
-import { renderGrid, renderHighlights, renderSpellRange, renderCubesAndEntities, renderDamageNumbers, spritesReady, hitTestEntitySprite, type PlayerDirection } from './render/gridRenderer'
+import { renderGrid, renderHighlights, renderSpellRange, renderCubesAndEntities, renderDamageNumbers, spritesReady, hitTestEntitySprite, hasSpriteAnimation, type PlayerDirection } from './render/gridRenderer'
 import { startDamageNumber, startFlash, tickEffects, getActiveDamageNumbers, getFlashingEntities, resetEffects } from './effects'
 import { computeOrigin, gridToScreen, screenToGrid, TILE_WIDTH, TILE_HEIGHT } from './render/projection'
 import { buildPath, startAnimation, tickAnimations, getVisualPosition, getCurrentSegment, resetAnimations } from './animation'
@@ -669,7 +669,7 @@ function animationLoop(now: number): void {
     cb()
   }
 
-  if (animsActive || effectsActive) {
+  if (animsActive || effectsActive || hasSpriteAnimation()) {
     rafId = requestAnimationFrame(animationLoop)
   } else {
     rafId = null
@@ -1477,4 +1477,4 @@ refreshReachable()
 refreshSpellRange()
 handleResize()                                     // dimensionne le canvas et premier rendu
 new ResizeObserver(handleResize).observe(canvas)   // recalcul à chaque resize de fenêtre
-spritesReady.then(() => render())                  // relance quand les sprites sont chargés
+spritesReady.then(() => { render(); startRenderLoop() })  // relance + démarre la boucle d'animation sprite

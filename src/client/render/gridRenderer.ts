@@ -56,14 +56,16 @@ function loadSprite(src: string): Promise<void> {
 /** Coordonnées d'une frame dans une spritesheet. */
 type FrameRect = { x: number; y: number; w: number; h: number }
 
-/** Entrée du cache spritesheet : image chargée + liste des frames découpées. */
-type SpritesheetEntry = { image: HTMLImageElement; frames: FrameRect[] }
+/** Entrée du cache spritesheet : image chargée, frames découpées et durées associées. */
+type SpritesheetEntry = { image: HTMLImageElement; frames: FrameRect[]; durations: number[] }
 
-/** Cache spritesheet : chemin PNG → { image, frames[] }. */
+/** Cache spritesheet : chemin PNG → { image, frames[], durations[] }. */
 const loadedSheets = new Map<string, SpritesheetEntry>()
 
 /** Format minimal du JSON PixelOver dont on a besoin. */
-type PixelOverJSON = { frames: Array<{ frame: { x: number; y: number; w: number; h: number } }> }
+type PixelOverJSON = {
+  frames: Array<{ frame: { x: number; y: number; w: number; h: number }; duration: number }>
+}
 
 /**
  * Charge une spritesheet PNG + son JSON PixelOver associé et les met en cache.
@@ -73,17 +75,42 @@ async function loadSpritesheet(pngSrc: string, jsonSrc: string): Promise<void> {
   if (typeof fetch === 'undefined') return
   if (typeof Image === 'undefined') return
   try {
-    const json = await fetch(jsonSrc).then(r => r.json()) as PixelOverJSON
-    const frames: FrameRect[] = json.frames.map(f => ({ ...f.frame }))
+    const json      = await fetch(jsonSrc).then(r => r.json()) as PixelOverJSON
+    const frames    = json.frames.map(f => ({ ...f.frame }))
+    const durations = json.frames.map(f => f.duration)
     await new Promise<void>(resolve => {
       const img = new Image()
-      img.onload  = () => { loadedSheets.set(pngSrc, { image: img, frames }); resolve() }
+      img.onload  = () => { loadedSheets.set(pngSrc, { image: img, frames, durations }); resolve() }
       img.onerror = () => resolve()
       img.src     = pngSrc
     })
   } catch {
-    // réseau ou JSON invalide → fallback silencieux (cercle puis sprite statique)
+    // réseau ou JSON invalide → fallback silencieux
   }
+}
+
+/**
+ * Calcule l'index de la frame à afficher à l'instant `now` (ms) pour une animation en boucle.
+ * Utilise les durées par frame du JSON PixelOver.
+ */
+function getCurrentFrame(durations: number[], now: number): number {
+  if (durations.length === 0) return 0
+  const total = durations.reduce((a, b) => a + b, 0)
+  if (total === 0) return 0
+  let t = now % total
+  for (let i = 0; i < durations.length; i++) {
+    t -= durations[i]!
+    if (t < 0) return i
+  }
+  return durations.length - 1
+}
+
+/**
+ * Renvoie true si au moins une spritesheet animée est chargée.
+ * Utilisé par la boucle RAF de main.ts pour maintenir le rendu en continu.
+ */
+export function hasSpriteAnimation(): boolean {
+  return loadedSheets.size > 0
 }
 
 // Spritesheet utilisée pour le joueur — étape 1 : Idle dir1 uniquement.
@@ -228,7 +255,8 @@ function drawEntity(
     // ── Joueur : spritesheet Knight (frame 0 Idle) ──────────────────────────
     const sheet = loadedSheets.get(KNIGHT_IDLE_PNG)
     if (sheet && sheet.frames.length > 0) {
-      const frame   = sheet.frames[0]!
+      const fi      = getCurrentFrame(sheet.durations, performance.now())
+      const frame   = sheet.frames[fi]!
       const dw      = KNIGHT_DISPLAY_W
       // Ancre les pieds (à KNIGHT_FEET_RATIO de la hauteur de frame) sur le point-sol (screenY)
       const spriteY = screenY - dw * KNIGHT_FEET_RATIO
