@@ -1,5 +1,5 @@
-import type { Cell, Entity, GameState, MapDefinition, Position } from '../shared/types'
-import { createGameStateFromMap } from '../core/mapLoader'
+import type { Cell, Entity, GameState, MapDefinition, MonsterGroup, Position } from '../shared/types'
+import { createGameStateFromMap, createCombatStateFromGroup } from '../core/mapLoader'
 import combat01Raw from '../../data/maps/combat-01.json'
 import combat02Raw from '../../data/maps/combat-02.json'
 import { getReachableCells } from '../core/movement'
@@ -9,7 +9,7 @@ import { applyAction } from '../core/reducer'
 import { getAIAction } from '../core/ai'
 import { renderGrid, renderHighlights, renderSpellRange, renderCubesAndEntities, renderDamageNumbers, spritesReady, type PlayerDirection } from './render/gridRenderer'
 import { startDamageNumber, startFlash, tickEffects, getActiveDamageNumbers, getFlashingEntities, resetEffects } from './effects'
-import { computeOrigin, screenToGrid, TILE_WIDTH, TILE_HEIGHT } from './render/projection'
+import { computeOrigin, gridToScreen, screenToGrid, TILE_WIDTH, TILE_HEIGHT } from './render/projection'
 import { buildPath, startAnimation, tickAnimations, getVisualPosition, getCurrentSegment, resetAnimations } from './animation'
 import { getUpcomingTurns } from '../core/turnOrder'
 
@@ -47,6 +47,7 @@ let gridScale = 1   // facteur d'agrandissement calculé au resize
  * recalcule l'origine isométrique, puis relance le rendu.
  */
 function handleResize(): void {
+  hideGroupPopup()  // position isoméétrique obsolète après resize
   const rect    = canvas.getBoundingClientRect()
   const newDpr  = window.devicePixelRatio || 1
   const newCssW = rect.width
@@ -94,7 +95,15 @@ const rightTabBtn     = document.querySelector<HTMLButtonElement>('.mobile-tab.r
 const mobileBackdrop  = document.querySelector<HTMLElement>('.mobile-backdrop')
 const leftPanel       = document.querySelector<HTMLElement>('.side-panel.left')
 const rightPanel      = document.querySelector<HTMLElement>('.side-panel.right')
-const combatAppEl     = document.querySelector<HTMLElement>('.combat-app')
+const combatAppEl       = document.querySelector<HTMLElement>('.combat-app')
+const summaryEl         = document.getElementById('combat-summary')
+const summaryTitleEl    = document.getElementById('summary-title')
+const summaryStatsEl    = document.getElementById('summary-stats')
+const summaryRewardsEl  = document.getElementById('summary-rewards')
+const summaryContinueEl = document.getElementById('summary-continue-btn') as HTMLButtonElement | null
+const groupPopupEl      = document.getElementById('group-popup')
+const gpopConfirmEl     = document.getElementById('gpop-confirm') as HTMLButtonElement | null
+const gpopCancelEl      = document.getElementById('gpop-cancel')  as HTMLButtonElement | null
 
 // ---------------------------------------------------------------------------
 // État de l'UI
@@ -109,6 +118,15 @@ const SPELL_CHARGE     = 'charge'
 const AI_STEP_DELAY_MS = 500  // pause entre chaque action IA (visible à l'écran)
 
 let gameMode:      GameMode = 'exploration'
+/** Id du groupe actuellement en combat (null = hors combat ou non initialisé).
+ *  Exporté : sera lu par la brique suivante pour retirer le groupe vaincu de la map. */
+export let activeGroupId: string | null = null
+/** Groupe en attente de confirmation (popup visible). Null = pas de popup ouverte. */
+let pendingGroup: MonsterGroup | null = null
+/** Vrai pendant l'animation de course vers les monstres — bloque les clics canvas. */
+let combatRunActive = false
+/** Vrai entre la détection d'une fin de combat et le retour en exploration (évite les doubles déclenchements). */
+let combatEndScheduled = false
 let mode:          UIMode  = 'move'
 let activeSpellId: string  = SPELL_COUP_EPEE  // sort actif quand mode === 'spell'
 let hoveredPos:    Position | null = null
@@ -355,7 +373,7 @@ function refreshSpellRange(): void {
 function runAIStep(): void {
   if (gameState.status !== 'ongoing') {
     aiTurnActive = false
-    stopTimer()
+    checkCombatEnd()
     render()
     return
   }
@@ -384,7 +402,7 @@ function runAIStep(): void {
     entityDirections.set(action.entityId, directionFromPath(aiPath))
     startAnimation(action.entityId, aiPath, performance.now())
     pendingAfterAnimation = () => {
-      if (gameState.status !== 'ongoing') { aiTurnActive = false; render(); return }
+      if (gameState.status !== 'ongoing') { aiTurnActive = false; checkCombatEnd(); render(); return }
       if (isCurrentEntityEnemy()) setTimeout(runAIStep, 0)
       else { aiTurnActive = false; startTurnTimer(); render() }
     }
@@ -418,7 +436,7 @@ function runAIStep(): void {
 
   if (gameState.status !== 'ongoing') {
     aiTurnActive = false
-    stopTimer()
+    checkCombatEnd()
     render()
     return
   }
@@ -707,28 +725,13 @@ function render(): void {
 }
 
 function renderOverlay(): void {
+  // Le résumé HTML (.combat-summary) gère l'affichage de fin de combat.
+  // On estompe juste le canvas pour que le champ de bataille reste visible en arrière-plan.
   if (gameState.status === 'ongoing') return
-
   const logW = cssW / gridScale
   const logH = cssH / gridScale
-
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.65)'
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.35)'
   ctx.fillRect(0, 0, logW, logH)
-
-  const isVictory = gameState.status === 'victory'
-  ctx.textAlign    = 'center'
-  ctx.textBaseline = 'middle'
-
-  ctx.font      = 'bold 52px monospace'
-  ctx.fillStyle = isVictory ? '#00ff88' : '#ff4455'
-  ctx.fillText(isVictory ? 'Victoire !' : 'Defaite...', logW / 2, logH / 2 - 20)
-
-  ctx.font      = '16px monospace'
-  ctx.fillStyle = '#888888'
-  ctx.fillText('Rechargez la page pour rejouer', logW / 2, logH / 2 + 36)
-
-  ctx.textAlign    = 'left'
-  ctx.textBaseline = 'top'
 }
 
 /**
@@ -775,6 +778,7 @@ function doEndTurn(): void {
   if (aiTurnActive) return
   if (timerHandle !== null) { clearInterval(timerHandle); timerHandle = null }
   gameState = applyAction(gameState, { type: 'END_TURN', entityId: gameState.currentEntityId })
+  if (gameState.status !== 'ongoing') { checkCombatEnd(); render(); return }
   mode = 'move'
   refreshReachable()
   refreshSpellRange()
@@ -808,6 +812,260 @@ function canvasPoint(e: MouseEvent): { screenX: number; screenY: number } {
 }
 
 /**
+ * Construit et affiche le modal de résumé de fin de combat.
+ * Remplit titre, statistiques et récompenses selon le résultat.
+ */
+function showCombatSummary(status: 'victory' | 'defeat'): void {
+  if (!summaryEl || !summaryTitleEl || !summaryStatsEl || !summaryRewardsEl) return
+  const isVictory = status === 'victory'
+  const enemies   = gameState.entities.filter(e => e.team === 'enemy')
+  const player    = gameState.entities.find(e => e.team === 'player')
+
+  summaryTitleEl.textContent = isVictory ? '✦  Victoire  ✦' : '☠  Défaite  ☠'
+  summaryTitleEl.className   = `summary-title ${isVictory ? 'is-victory' : 'is-defeat'}`
+
+  const defeatedCount = enemies.filter(e => e.hp <= 0).length
+  summaryStatsEl.innerHTML = `
+    <div class="summary-stat-row">
+      <span class="s-label">Tours</span>
+      <span class="s-value">${gameState.turn}</span>
+    </div>
+    <div class="summary-stat-row">
+      <span class="s-label">Ennemis vaincus</span>
+      <span class="s-value">${defeatedCount} / ${enemies.length}</span>
+    </div>
+    <div class="summary-stat-row">
+      <span class="s-label">PV restants</span>
+      <span class="s-value">${player?.hp ?? 0} / ${player?.maxHp ?? 100}</span>
+    </div>`
+
+  if (isVictory) {
+    // Valeurs temporaires : système de progression à implémenter plus tard.
+    const xp   = enemies.reduce((sum, e) => sum + e.maxHp, 0)
+    const gold = defeatedCount * 10
+    summaryRewardsEl.innerHTML = `
+      <div class="summary-rewards-title">Récompenses</div>
+      <div class="summary-reward-row">
+        <span class="summary-reward-label">Expérience</span>
+        <span class="summary-reward-value xp">+${xp} XP</span>
+      </div>
+      <div class="summary-reward-row">
+        <span class="summary-reward-label">Or</span>
+        <span class="summary-reward-value gold">+${gold} or</span>
+      </div>`
+    summaryRewardsEl.style.display = ''
+  } else {
+    summaryRewardsEl.style.display = 'none'
+  }
+
+  summaryEl.classList.add('is-visible')
+}
+
+/**
+ * À appeler après chaque mutation de gameState en mode combat.
+ * Si le combat vient de se terminer, affiche le résumé.
+ * Idempotent : combatEndScheduled empêche les doubles déclenchements.
+ */
+function checkCombatEnd(): void {
+  if (gameMode !== 'combat') return
+  if (gameState.status === 'ongoing') return
+  if (combatEndScheduled) return
+  combatEndScheduled = true
+  stopTimer()
+  showCombatSummary(gameState.status as 'victory' | 'defeat')
+}
+
+/**
+ * Revient en exploration après une VICTOIRE.
+ * Retire le groupe vaincu de currentMapDef EN MÉMOIRE UNIQUEMENT — le JSON source
+ * n'est pas touché. Si la map est rechargée depuis le registre (transition est/ouest
+ * ou touche 1/2), tous ses groupes réapparaissent. C'est un comportement de session.
+ */
+function returnToExploration(): void {
+  combatEndScheduled = false
+  summaryEl?.classList.remove('is-visible')
+
+  if (activeGroupId !== null) {
+    currentMapDef = {
+      ...currentMapDef,
+      monsterGroups: currentMapDef.monsterGroups.filter(g => g.id !== activeGroupId),
+    }
+    activeGroupId = null
+  }
+
+  const combatPlayer = gameState.entities.find(e => e.team === 'player')
+  const playerPos    = combatPlayer?.position ?? currentMapDef.player.startPosition
+
+  gameMode = 'exploration'
+  combatAppEl?.classList.add('mode-exploration')
+  loadMapForExploration(currentMapDef, playerPos)
+}
+
+/**
+ * Revient en exploration après une DÉFAITE.
+ * Le groupe reste sur la map (pas vaincu). Le joueur réapparaît à la position de départ.
+ */
+function returnToExplorationDefeated(): void {
+  combatEndScheduled = false
+  summaryEl?.classList.remove('is-visible')
+  activeGroupId = null
+  gameMode = 'exploration'
+  combatAppEl?.classList.add('mode-exploration')
+  loadMapForExploration(currentMapDef, currentMapDef.player.startPosition)
+}
+
+/**
+ * Affiche la bulle de confirmation au-dessus du monstre cliqué.
+ * La position est calculée en coordonnées isométriques converties en pixels CSS.
+ */
+function showGroupPopup(group: MonsterGroup, monsterPos: Position): void {
+  if (!groupPopupEl || !combatAppEl) return
+  pendingGroup = group
+
+  // Centre isométrique de la case en coordonnées logiques (avant gridScale)
+  const screen = gridToScreen(monsterPos, origin)
+
+  // Sommet haut du losange = centre - demi-hauteur → anchor visible au-dessus du sprite
+  const anchorCssX = screen.screenX * gridScale
+  const anchorCssY = (screen.screenY - TILE_HEIGHT / 2) * gridScale
+
+  // Offset canvas → combat-app (le parent absolument positionné)
+  const canvasRect = canvas.getBoundingClientRect()
+  const appRect    = combatAppEl.getBoundingClientRect()
+
+  groupPopupEl.style.left = `${canvasRect.left - appRect.left + anchorCssX}px`
+  groupPopupEl.style.top  = `${canvasRect.top  - appRect.top  + anchorCssY}px`
+  groupPopupEl.classList.add('is-visible')
+}
+
+function hideGroupPopup(): void {
+  pendingGroup = null
+  groupPopupEl?.classList.remove('is-visible')
+}
+
+/**
+ * Retourne le groupe dont un monstre occupe la case `pos`, ou undefined si aucun.
+ */
+function findGroupAtPosition(pos: Position): MonsterGroup | undefined {
+  return currentMapDef.monsterGroups.find(g =>
+    g.monsters.some(m => m.position.x === pos.x && m.position.y === pos.y),
+  )
+}
+
+/**
+ * Retourne la case walkable adjacente au groupe la plus proche du joueur,
+ * en évitant les cases déjà occupées par d'autres monstres du groupe.
+ */
+function findAdjacentToGroup(group: MonsterGroup, player: Entity): Position | null {
+  const monsterCells = new Set(group.monsters.map(m => `${m.position.x},${m.position.y}`))
+  let best: Position | null = null
+  let bestDist = Infinity
+
+  for (const monster of group.monsters) {
+    for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]] as [number, number][]) {
+      const nx = monster.position.x + dx
+      const ny = monster.position.y + dy
+      if (monsterCells.has(`${nx},${ny}`)) continue
+      const cell = getCell(gameState.grid, { x: nx, y: ny })
+      if (!cell?.walkable) continue
+      const dist = Math.abs(nx - player.position.x) + Math.abs(ny - player.position.y)
+      if (dist < bestDist) { bestDist = dist; best = { x: nx, y: ny } }
+    }
+  }
+  return best
+}
+
+/**
+ * Engage un combat contre `group` : anime d'abord la course du joueur vers une
+ * case adjacente aux monstres, puis lance le combat via launchCombat.
+ * Si le joueur est déjà adjacent (ou chemin impossible), le combat démarre immédiatement.
+ */
+function engageCombatGroup(group: MonsterGroup): void {
+  const player = gameState.entities.find(e => e.team === 'player')
+  if (!player) return
+
+  hideGroupPopup()
+
+  // Annule tout mouvement en cours
+  if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null }
+  pendingAfterAnimation = null
+  resetAnimations()
+
+  const targetPos = findAdjacentToGroup(group, player)
+  const alreadyClose = !targetPos ||
+    (targetPos.x === player.position.x && targetPos.y === player.position.y) ||
+    group.monsters.some(m =>
+      Math.abs(m.position.x - player.position.x) + Math.abs(m.position.y - player.position.y) <= 1
+    )
+
+  if (!alreadyClose) {
+    const monsterCells = new Set(group.monsters.map(m => `${m.position.x},${m.position.y}`))
+    const path = buildPath(gameState.grid, player.position, targetPos!, monsterCells)
+    const isValidPath = path.length >= 2 && path.every((p, i) => {
+      if (i === 0) return true
+      const prev = path[i - 1]!
+      return Math.abs(p.x - prev.x) + Math.abs(p.y - prev.y) === 1
+    })
+
+    if (isValidPath) {
+      gameState = {
+        ...gameState,
+        entities: gameState.entities.map(e =>
+          e.id === player.id ? { ...e, position: targetPos! } : e
+        ),
+      }
+      entityDirections.set(player.id, directionFromPath(path))
+      startAnimation(player.id, path, performance.now())
+      combatRunActive = true
+      pendingAfterAnimation = () => launchCombat(group, player.id)
+      startRenderLoop()
+      return
+    }
+  }
+
+  launchCombat(group, player.id)
+}
+
+/** Initialise réellement le GameState de combat et bascule le mode. */
+function launchCombat(group: MonsterGroup, playerId: string): void {
+  combatRunActive = false
+  const player = gameState.entities.find(e => e.id === playerId)
+  if (!player) return
+
+  stopTimer()
+  if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null }
+  pendingAfterAnimation = null
+
+  gameState          = createCombatStateFromGroup(currentMapDef, group, player)
+  activeGroupId      = group.id
+  combatEndScheduled = false
+
+  gameMode      = 'combat'
+  combatAppEl?.classList.remove('mode-exploration')
+  mode          = 'move'
+  activeSpellId = SPELL_COUP_EPEE
+  hoveredPos    = null
+  aiTurnActive  = false
+  timeLeft      = TURN_DURATION
+
+  entityDirections.clear()
+  logEntries.length = 0
+  if (hudLogEntriesEl) hudLogEntriesEl.innerHTML = ''
+  if (hudLogCountEl)   hudLogCountEl.textContent = ''
+  resetEffects()
+  resetAnimations()
+
+  initEntityDirections()
+  refreshReachable()
+  refreshSpellRange()
+
+  handleResize()
+
+  pushLog(`Combat déclenché (${group.monsters.length} ennemi${group.monsters.length > 1 ? 's' : ''}). À <span class="actor">${currentEntity().name}</span> de jouer !`, 'system')
+  startTurnTimer()
+}
+
+/**
  * Déplacement libre en mode exploration : le joueur marche vers la case cliquée
  * sans limite de PM ni mécanique de tour. Réutilise le BFS et l'animation existants.
  * Un clic hors-grille depuis le bord correspondant déclenche une transition de map.
@@ -820,6 +1078,13 @@ function handleExplorationClick(pos: Position): void {
   const cell = getCell(gameState.grid, pos)
   if (!cell) {
     tryMapTransition(pos, player)
+    return
+  }
+
+  // Clic sur un monstre de groupe → demande de confirmation
+  const clickedGroup = findGroupAtPosition(pos)
+  if (clickedGroup) {
+    showGroupPopup(clickedGroup, pos)
     return
   }
 
@@ -868,7 +1133,7 @@ canvas.addEventListener('mouseleave', () => {
 })
 
 canvas.addEventListener('click', (e) => {
-  if (aiTurnActive) return  // bloquer les clics pendant le tour ennemi
+  if (aiTurnActive || combatRunActive) return  // bloquer pendant le tour ennemi ou la course vers les monstres
 
   const pos = screenToGrid(canvasPoint(e), origin)
 
@@ -892,7 +1157,7 @@ canvas.addEventListener('click', (e) => {
     )
     gameState = applyAction(gameState, { type: 'MOVE', entityId, to: pos })  // [MODE COMBAT]
     if (gameState === prevState) return  // déplacement refusé par le core : on ne fait rien
-    if (gameState.status !== 'ongoing') stopTimer()
+    checkCombatEnd()
     refreshReachable()
     refreshSpellRange()
     const path = buildPath(gameState.grid, fromPos, pos, blockedForAnim)
@@ -907,7 +1172,7 @@ canvas.addEventListener('click', (e) => {
       type: 'USE_SPELL', entityId, spellId: activeSpellId, target: pos,
     })
     if (gameState !== prevState) {
-      if (gameState.status !== 'ongoing') stopTimer()
+      checkCombatEnd()
       mode = 'move'
       triggerHitEffects(prevState, gameState)
       logSpellUse(prevState, gameState, entityId, activeSpellId)
@@ -964,6 +1229,7 @@ document.addEventListener('keydown', (e) => {
       doEndTurn()
       break
     case 'ESCAPE':
+      if (pendingGroup !== null) { hideGroupPopup(); break }
       if (mode === 'spell') { mode = 'move'; render() }
       break
   }
@@ -1132,6 +1398,31 @@ function tryMapTransition(clickedPos: Position, player: Entity): void {
   const entryPos = computeEntryPosition(neighborDef, exitDir, player)
   loadMapForExploration(neighborDef, entryPos)
 }
+
+// ---------------------------------------------------------------------------
+// Bulle de confirmation de combat
+// ---------------------------------------------------------------------------
+
+gpopConfirmEl?.addEventListener('click', () => {
+  if (pendingGroup) engageCombatGroup(pendingGroup)
+})
+
+gpopCancelEl?.addEventListener('click', () => hideGroupPopup())
+
+// Ferme la popup sur clic extérieur (pointerdown avant le clic sur le canvas)
+document.addEventListener('pointerdown', (e) => {
+  if (!groupPopupEl?.classList.contains('is-visible')) return
+  if (!groupPopupEl.contains(e.target as Node)) hideGroupPopup()
+})
+
+// ---------------------------------------------------------------------------
+// Bouton de résumé de combat
+// ---------------------------------------------------------------------------
+
+summaryContinueEl?.addEventListener('click', () => {
+  if (gameState.status === 'victory') returnToExploration()
+  else returnToExplorationDefeated()
+})
 
 // ---------------------------------------------------------------------------
 // Raccourcis clavier — sélection de map

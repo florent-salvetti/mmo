@@ -979,3 +979,121 @@ h1, h2, h3, .display { font-family: "Cinzel", serif; font-weight: 600; letter-sp
   visibility: hidden;
   pointer-events: none;
 }
+
+/* ─── Bulle de confirmation de combat ───────────────────────── */
+.group-popup {
+  position: absolute;
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  z-index: 150;
+  /* Ancrage : bottom-center de la bulle pointe vers le monstre */
+  transform: translate(-50%, -100%) translateY(-14px) scale(0.75);
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+.group-popup.is-visible {
+  opacity: 1; pointer-events: auto;
+  transform: translate(-50%, -100%) translateY(-14px) scale(1);
+}
+/* Flèche pointant vers le bas (vers le monstre) */
+.group-popup::after {
+  content: '';
+  position: absolute; bottom: -7px; left: 50%;
+  transform: translateX(-50%) rotate(45deg);
+  width: 10px; height: 10px;
+  background: rgba(6, 9, 18, 0.92);
+  border-right: 1px solid var(--border-strong);
+  border-bottom: 1px solid var(--border-strong);
+}
+.gpop-btns { display: flex; gap: 10px; }
+.gpop-btn {
+  width: 40px; height: 40px; border-radius: 50%;
+  border: 2px solid; background: rgba(6, 9, 18, 0.92);
+  cursor: pointer; font-size: 20px; line-height: 1;
+  display: flex; align-items: center; justify-content: center;
+  transition: transform 0.12s, box-shadow 0.12s;
+  backdrop-filter: blur(6px);
+}
+.gpop-btn:hover { transform: scale(1.18); }
+.gpop-confirm { border-color: var(--hp); color: var(--hp); }
+.gpop-confirm:hover { box-shadow: 0 0 16px var(--hp); }
+.gpop-cancel  { border-color: var(--danger); color: var(--danger); }
+.gpop-cancel:hover  { box-shadow: 0 0 16px var(--danger-glow); }
+
+/* ─── Résumé de fin de combat ───────────────────────────────── */
+.combat-summary {
+  position: absolute; inset: 0; z-index: 200;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(0, 0, 0, 0.72);
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.35s ease;
+}
+.combat-summary.is-visible {
+  opacity: 1; pointer-events: auto;
+}
+
+.summary-panel {
+  background: var(--bg-panel-solid);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  padding: 32px 40px;
+  min-width: 340px; max-width: 460px; width: 90%;
+  display: flex; flex-direction: column; gap: 18px;
+  text-align: center;
+  box-shadow: 0 12px 60px rgba(0,0,0,0.7), 0 0 80px var(--primary-glow);
+}
+
+.summary-title {
+  font-family: "Cinzel", serif;
+  font-size: 26px; font-weight: 700;
+  letter-spacing: 0.10em; text-transform: uppercase;
+}
+.summary-title.is-victory { color: var(--hp); }
+.summary-title.is-defeat  { color: var(--danger); }
+
+.summary-divider { border: none; border-top: 1px solid var(--border); margin: 0; }
+
+.summary-stats { display: flex; flex-direction: column; gap: 8px; }
+.summary-stat-row {
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 14px; color: var(--text-1);
+}
+.summary-stat-row .s-label { font-weight: 600; }
+.summary-stat-row .s-value {
+  font-family: "JetBrains Mono", monospace;
+  color: var(--text-0);
+}
+
+.summary-rewards {
+  display: flex; flex-direction: column; gap: 10px;
+  border-top: 1px solid var(--border);
+  padding-top: 16px;
+}
+.summary-rewards-title {
+  font-size: 11px; letter-spacing: 0.14em;
+  text-transform: uppercase; color: var(--text-2);
+}
+.summary-reward-row {
+  display: flex; justify-content: space-between; align-items: center;
+}
+.summary-reward-label { font-size: 14px; color: var(--text-1); }
+.summary-reward-value {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 15px; font-weight: 700;
+}
+.summary-reward-value.xp   { color: var(--primary); }
+.summary-reward-value.gold { color: var(--gold); }
+
+.summary-continue-btn {
+  margin-top: 4px; padding: 11px 28px;
+  background: var(--primary-soft);
+  border: 1px solid var(--primary); border-radius: 4px;
+  color: var(--primary);
+  font-family: "Rajdhani", sans-serif;
+  font-size: 15px; font-weight: 600; letter-spacing: 0.06em;
+  cursor: pointer;
+  transition: background 0.15s, box-shadow 0.15s;
+}
+.summary-continue-btn:hover {
+  background: rgba(77, 217, 255, 0.28);
+  box-shadow: 0 0 20px var(--primary-glow);
+}

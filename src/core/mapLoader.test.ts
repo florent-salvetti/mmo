@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { createGameStateFromMap } from './mapLoader'
-import type { MapDefinition } from '../shared/types'
+import { createGameStateFromMap, createCombatStateFromGroup } from './mapLoader'
+import type { Entity, MapDefinition } from '../shared/types'
 import combat01Raw from '../../data/maps/combat-01.json'
 
 const combat01 = combat01Raw as unknown as MapDefinition
@@ -98,6 +98,63 @@ describe('createGameStateFromMap — entités', () => {
 describe('createGameStateFromMap — état initial', () => {
   it('démarre au tour 1 avec le joueur comme entité courante', () => {
     const state = createGameStateFromMap(testDef)
+    expect(state.turn).toBe(1)
+    expect(state.currentEntityId).toBe('p1')
+    expect(state.status).toBe('ongoing')
+  })
+})
+
+// Joueur de test pour createCombatStateFromGroup — position et stats partiellement dégradés
+// pour vérifier que la fonction restaure bien AP/MP au max.
+const testPlayer: Entity = {
+  id: 'p1', name: 'Hero', team: 'player',
+  position: { x: 2, y: 2 },
+  hp: 80, maxHp: 100,
+  ap: 3, maxAp: 6,
+  mp: 1, maxMp: 3,
+}
+
+describe('createCombatStateFromGroup', () => {
+  const group = testDef.monsterGroups[0]!  // grp-test : 1 Goblin à (4,3)
+
+  it('inclut le joueur et tous les monstres du groupe dans entities', () => {
+    const state = createCombatStateFromGroup(testDef, group, testPlayer)
+    expect(state.entities).toHaveLength(2)
+    expect(state.entities.filter(e => e.team === 'player')).toHaveLength(1)
+    expect(state.entities.filter(e => e.team === 'enemy')).toHaveLength(1)
+  })
+
+  it('place le joueur à sa position courante (pas startPosition)', () => {
+    const state = createCombatStateFromGroup(testDef, group, testPlayer)
+    const p = state.entities.find(e => e.team === 'player')!
+    expect(p.position).toEqual({ x: 2, y: 2 })
+  })
+
+  it('restaure les PA et PM du joueur au maximum', () => {
+    const state = createCombatStateFromGroup(testDef, group, testPlayer)
+    const p = state.entities.find(e => e.team === 'player')!
+    expect(p.ap).toBe(6)
+    expect(p.mp).toBe(3)
+  })
+
+  it('place les monstres du groupe comme ennemis à leurs positions', () => {
+    const state = createCombatStateFromGroup(testDef, group, testPlayer)
+    const enemy = state.entities.find(e => e.id === 'e1')!
+    expect(enemy.team).toBe('enemy')
+    expect(enemy.position).toEqual({ x: 4, y: 3 })
+    expect(enemy.creatureType).toBe('goblin')
+  })
+
+  it('construit la grille depuis les obstacles de la map', () => {
+    const state = createCombatStateFromGroup(testDef, group, testPlayer)
+    expect(state.grid.length).toBe(4)
+    expect(state.grid[0].length).toBe(5)
+    expect(state.grid[1][2].obstacle).toBe('hole')
+    expect(state.grid[1][2].walkable).toBe(false)
+  })
+
+  it('démarre au tour 1 avec le joueur comme entité courante', () => {
+    const state = createCombatStateFromGroup(testDef, group, testPlayer)
     expect(state.turn).toBe(1)
     expect(state.currentEntityId).toBe('p1')
     expect(state.status).toBe('ongoing')

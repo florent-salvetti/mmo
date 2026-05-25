@@ -186,6 +186,31 @@
         </div><!-- /.spellbar -->
       </div><!-- /.spellbar-wrap -->
 
+      <!-- ═══════════════════════════════════════════════════════════
+           BULLE DE CONFIRMATION DE COMBAT
+           ═══════════════════════════════════════════════════════════ -->
+      <div class="group-popup" id="group-popup">
+        <div class="gpop-btns">
+          <button class="gpop-btn gpop-confirm" id="gpop-confirm" title="Lancer le combat">✓</button>
+          <button class="gpop-btn gpop-cancel"  id="gpop-cancel"  title="Annuler">✕</button>
+        </div>
+      </div>
+
+      <!-- ═══════════════════════════════════════════════════════════
+           RÉSUMÉ DE COMBAT (victoire / défaite)
+           ═══════════════════════════════════════════════════════════ -->
+      <div class="combat-summary" id="combat-summary">
+        <div class="summary-panel">
+          <div class="summary-title" id="summary-title"></div>
+          <hr class="summary-divider">
+          <div class="summary-stats" id="summary-stats"></div>
+          <div class="summary-rewards" id="summary-rewards"></div>
+          <button class="summary-continue-btn" id="summary-continue-btn">
+            Retour en exploration
+          </button>
+        </div>
+      </div>
+
     </div><!-- /.combat-app -->
 
     <script type="module" src="/src/client/main.ts"></script>
