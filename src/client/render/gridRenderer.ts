@@ -83,9 +83,8 @@ function getSprite(prefix: string, dir: PlayerDirection): HTMLImageElement | nul
 }
 
 /**
- * Dessine toute la grille isométrique sur le canvas.
- * Deux passes : d'abord toutes les dalles, puis les cubes par-dessus
- * (le peintre assure que les cubes ne sont pas écrasés par les dalles voisines).
+ * Dessine toute la grille isométrique sur le canvas (dalles uniquement).
+ * Les cubes sont dessinés séparément via renderCubesAndEntities pour respecter la profondeur.
  */
 export function renderGrid(
   ctx: CanvasRenderingContext2D,
@@ -95,15 +94,6 @@ export function renderGrid(
   for (const row of grid) {
     for (const cell of row) {
       drawTile(ctx, cell, origin)
-    }
-  }
-  // Passe 2 : cubes isométriques par-dessus les dalles
-  for (const row of grid) {
-    for (const cell of row) {
-      if (cell.obstacle === 'cube') {
-        const { screenX, screenY } = gridToScreen(cell.position, origin)
-        drawCube(ctx, screenX, screenY)
-      }
     }
   }
 }
@@ -168,6 +158,61 @@ export function renderSpellRange(
   }
 }
 
+/** Dessine une entité vivante (sprite ou cercle), sa barre de PV et son éventuel flash. */
+function drawEntity(
+  ctx: CanvasRenderingContext2D,
+  entity: Entity,
+  origin: ScreenPos,
+  directions: Map<string, PlayerDirection>,
+  flashingEntities: Map<string, number>,
+): void {
+  const { screenX, screenY } = gridToScreen(entity.position, origin)
+  const dir    = directions.get(entity.id) ?? 'SE'
+  const prefix = entity.team === 'player' ? 'player' : (entity.creatureType ?? null)
+  let hpBarY: number
+
+  const spriteW = entity.team === 'player' ? PLAYER_SPRITE_W   : ENEMY_SPRITE_W
+  const yOffset = entity.team === 'player' ? PLAYER_SPRITE_Y_OFFSET : ENEMY_SPRITE_Y_OFFSET
+
+  if (prefix !== null) {
+    const sprite = getSprite(prefix, dir)
+    if (sprite) {
+      const spriteH = spriteW * sprite.naturalHeight / sprite.naturalWidth
+      const spriteY = screenY - spriteH + yOffset
+      ctx.drawImage(sprite, screenX - spriteW / 2, spriteY, spriteW, spriteH)
+      hpBarY = spriteY - 4
+    } else {
+      const cy = screenY + yOffset
+      drawEntityCircle(ctx, screenX, cy, entity.team)
+      hpBarY = cy - 10 - 6
+    }
+  } else {
+    const cy = screenY + yOffset
+    drawEntityCircle(ctx, screenX, cy, entity.team)
+    hpBarY = cy - 10 - 6
+  }
+
+  const ratio  = entity.hp / entity.maxHp
+  const barW   = 20
+  const barH   = 3
+  const barClr = ratio > 0.6 ? '#4caf50' : ratio > 0.3 ? '#ffc107' : '#f44336'
+  ctx.fillStyle = '#222233'
+  ctx.fillRect(screenX - barW / 2, hpBarY, barW, barH)
+  ctx.fillStyle = barClr
+  ctx.fillRect(screenX - barW / 2, hpBarY, barW * ratio, barH)
+
+  const flashAlpha = flashingEntities.get(entity.id)
+  if (flashAlpha !== undefined) {
+    ctx.save()
+    ctx.globalAlpha = flashAlpha
+    ctx.fillStyle   = '#ffffff'
+    ctx.beginPath()
+    ctx.arc(screenX, screenY, 20, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.restore()
+  }
+}
+
 /**
  * Dessine toutes les entités vivantes avec leur barre de PV.
  * `directions` associe l'id de chaque entité à sa direction visuelle courante.
@@ -182,53 +227,49 @@ export function renderEntities(
 ): void {
   for (const entity of entities) {
     if (entity.hp <= 0) continue
+    drawEntity(ctx, entity, origin, directions, flashingEntities)
+  }
+}
 
-    const { screenX, screenY } = gridToScreen(entity.position, origin)
-    const dir    = directions.get(entity.id) ?? 'SE'
-    const prefix = entity.team === 'player' ? 'player' : (entity.creatureType ?? null)
-    let hpBarY: number
+/**
+ * Dessine cubes et entités dans une passe unique triée par profondeur isométrique (x + y).
+ * Garantit que les entités derrière un cube ne passent pas devant.
+ */
+export function renderCubesAndEntities(
+  ctx: CanvasRenderingContext2D,
+  grid: Cell[][],
+  entities: Entity[],
+  origin: ScreenPos,
+  directions: Map<string, PlayerDirection> = new Map(),
+  flashingEntities: Map<string, number> = new Map(),
+): void {
+  type Item =
+    | { kind: 'cube';   pos: Position; depth: number }
+    | { kind: 'entity'; entity: Entity; depth: number }
 
-    const spriteW  = entity.team === 'player' ? PLAYER_SPRITE_W   : ENEMY_SPRITE_W
-    const yOffset  = entity.team === 'player' ? PLAYER_SPRITE_Y_OFFSET : ENEMY_SPRITE_Y_OFFSET
+  const items: Item[] = []
 
-    if (prefix !== null) {
-      const sprite = getSprite(prefix, dir)
-      if (sprite) {
-        const spriteH = spriteW * sprite.naturalHeight / sprite.naturalWidth
-        const spriteY = screenY - spriteH + yOffset
-        ctx.drawImage(sprite, screenX - spriteW / 2, spriteY, spriteW, spriteH)
-        hpBarY = spriteY - 4
-      } else {
-        const cy = screenY + yOffset
-        drawEntityCircle(ctx, screenX, cy, entity.team)
-        hpBarY = cy - 10 - 6
+  for (const row of grid) {
+    for (const cell of row) {
+      if (cell.obstacle === 'cube') {
+        items.push({ kind: 'cube', pos: cell.position, depth: cell.position.x + cell.position.y })
       }
-    } else {
-      const cy = screenY + yOffset
-      drawEntityCircle(ctx, screenX, cy, entity.team)
-      hpBarY = cy - 10 - 6
     }
+  }
 
-    // Barre de PV positionnée juste au-dessus du sprite ou du cercle.
-    const ratio  = entity.hp / entity.maxHp
-    const barW   = 20
-    const barH   = 3
-    const barClr = ratio > 0.6 ? '#4caf50' : ratio > 0.3 ? '#ffc107' : '#f44336'
-    ctx.fillStyle = '#222233'
-    ctx.fillRect(screenX - barW / 2, hpBarY, barW, barH)
-    ctx.fillStyle = barClr
-    ctx.fillRect(screenX - barW / 2, hpBarY, barW * ratio, barH)
+  for (const entity of entities) {
+    if (entity.hp <= 0) continue
+    items.push({ kind: 'entity', entity, depth: entity.position.x + entity.position.y })
+  }
 
-    // Flash blanc sur la cible touchée — disque centré sur la case.
-    const flashAlpha = flashingEntities.get(entity.id)
-    if (flashAlpha !== undefined) {
-      ctx.save()
-      ctx.globalAlpha = flashAlpha
-      ctx.fillStyle   = '#ffffff'
-      ctx.beginPath()
-      ctx.arc(screenX, screenY, 20, 0, Math.PI * 2)
-      ctx.fill()
-      ctx.restore()
+  items.sort((a, b) => a.depth - b.depth)
+
+  for (const item of items) {
+    if (item.kind === 'cube') {
+      const { screenX, screenY } = gridToScreen(item.pos, origin)
+      drawCube(ctx, screenX, screenY)
+    } else {
+      drawEntity(ctx, item.entity, origin, directions, flashingEntities)
     }
   }
 }

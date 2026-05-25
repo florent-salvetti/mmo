@@ -4,7 +4,7 @@ import { getSpell, getSpellTargetCells } from '../core/spells'
 import { getCell } from '../core/grid'
 import { applyAction } from '../core/reducer'
 import { getAIAction } from '../core/ai'
-import { renderGrid, renderHighlights, renderSpellRange, renderEntities, renderDamageNumbers, spritesReady, type PlayerDirection } from './render/gridRenderer'
+import { renderGrid, renderHighlights, renderSpellRange, renderEntities, renderCubesAndEntities, renderDamageNumbers, spritesReady, type PlayerDirection } from './render/gridRenderer'
 import { startDamageNumber, startFlash, tickEffects, getActiveDamageNumbers, getFlashingEntities } from './effects'
 import { computeOrigin, screenToGrid, TILE_WIDTH, TILE_HEIGHT } from './render/projection'
 import { buildPath, startAnimation, tickAnimations, getVisualPosition, getCurrentSegment } from './animation'
@@ -215,6 +215,10 @@ function updateTimerDOM(): void {
   if (hudTimerEl) hudTimerEl.classList.toggle('is-low', timeLeft <= 10)
 }
 
+function stopTimer(): void {
+  if (timerHandle !== null) { clearInterval(timerHandle); timerHandle = null }
+}
+
 function startTurnTimer(): void {
   if (timerHandle !== null) { clearInterval(timerHandle); timerHandle = null }
   timeLeft = TURN_DURATION
@@ -342,6 +346,7 @@ function refreshSpellRange(): void {
 function runAIStep(): void {
   if (gameState.status !== 'ongoing') {
     aiTurnActive = false
+    stopTimer()
     render()
     return
   }
@@ -404,6 +409,8 @@ function runAIStep(): void {
 
   if (gameState.status !== 'ongoing') {
     aiTurnActive = false
+    stopTimer()
+    render()
     return
   }
 
@@ -638,7 +645,7 @@ function render(): void {
 
   const visualEntities    = getVisualEntities()
   const flashingEntities  = getFlashingEntities(now)
-  renderEntities(ctx, visualEntities, origin, entityDirections, flashingEntities)
+  renderCubesAndEntities(ctx, gameState.grid, visualEntities, origin, entityDirections, flashingEntities)
   renderDamageNumbers(ctx, getActiveDamageNumbers(now), visualEntities, origin)
   renderOverlay()
   updateHudDOM()
@@ -776,6 +783,7 @@ canvas.addEventListener('click', (e) => {
     )
     gameState = applyAction(gameState, { type: 'MOVE', entityId, to: pos })
     if (gameState === prevState) return  // déplacement refusé par le core : on ne fait rien
+    if (gameState.status !== 'ongoing') stopTimer()
     refreshReachable()
     refreshSpellRange()
     const path = buildPath(gameState.grid, fromPos, pos, blockedForAnim)
@@ -790,6 +798,7 @@ canvas.addEventListener('click', (e) => {
       type: 'USE_SPELL', entityId, spellId: activeSpellId, target: pos,
     })
     if (gameState !== prevState) {
+      if (gameState.status !== 'ongoing') stopTimer()
       mode = 'move'
       triggerHitEffects(prevState, gameState)
       logSpellUse(prevState, gameState, entityId, activeSpellId)
