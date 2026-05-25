@@ -534,13 +534,26 @@ function doEndTurn(): void {
 // Événements souris
 // ---------------------------------------------------------------------------
 
+/**
+ * Convertit un événement souris en coordonnées logiques du jeu (pixels CSS),
+ * cohérentes avec origin et screenToGrid.
+ *
+ * Le facteur cssW / rect.width normalise un éventuel écart entre la taille
+ * CSS mesurée au clic et celle qui a servi à calculer origin au dernier resize
+ * (vaut 1 en fonctionnement normal, garde les deux espaces cohérents si le
+ * ResizeObserver n'a pas encore recalculé origin après un resize très rapide).
+ */
+function canvasPoint(e: MouseEvent): { screenX: number; screenY: number } {
+  const rect = canvas.getBoundingClientRect()
+  return {
+    screenX: (e.clientX - rect.left) * (cssW / rect.width),
+    screenY: (e.clientY - rect.top)  * (cssH / rect.height),
+  }
+}
+
 canvas.addEventListener('mousemove', (e) => {
   if (aiTurnActive) return
-  const rect   = canvas.getBoundingClientRect()
-  const newPos = screenToGrid(
-    { screenX: e.clientX - rect.left, screenY: e.clientY - rect.top },
-    origin,
-  )
+  const newPos = screenToGrid(canvasPoint(e), origin)
   if (hoveredPos?.x === newPos.x && hoveredPos?.y === newPos.y) return
   hoveredPos = newPos
   render()
@@ -555,11 +568,7 @@ canvas.addEventListener('mouseleave', () => {
 canvas.addEventListener('click', (e) => {
   if (aiTurnActive) return  // bloquer les clics pendant le tour ennemi
 
-  const rect   = canvas.getBoundingClientRect()
-  const clickX = e.clientX - rect.left
-  const clickY = e.clientY - rect.top
-
-  const pos = screenToGrid({ screenX: clickX, screenY: clickY }, origin)
+  const pos = screenToGrid(canvasPoint(e), origin)
   if (!getCell(gameState.grid, pos)) return
 
   if (mode === 'move') {
