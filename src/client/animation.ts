@@ -1,5 +1,11 @@
 import type { Cell, Position } from '../shared/types'
-import { getNeighbors } from '../core/grid'
+import { getNeighbors, getCell } from '../core/grid'
+
+/** Décalages des 4 diagonales — utilisés uniquement en exploration (8 directions). */
+const DIAGONAL_OFFSETS: Position[] = [
+  { x: -1, y: -1 }, { x: 1, y: -1 },
+  { x: -1, y:  1 }, { x: 1, y:  1 },
+]
 
 /** Durée d'animation par case traversée (ms). Une entité avec mp=3 s'anime en ~600 ms. */
 const MS_PER_STEP = 200
@@ -20,11 +26,21 @@ const active = new Map<string, MoveAnimation>()
  * Retourne un tableau [from, ..., to].
  * Fallback sur [from, to] (ligne droite) si aucun chemin n'existe.
  */
+/**
+ * Reconstruit le chemin BFS de `from` vers `to` sur la grille.
+ * `blockedPositions` bloque des cases supplémentaires (entités vivantes
+ * capturées avant le déplacement, pour reproduire le trajet réel).
+ * `allowDiagonals` active les 8 directions (exploration uniquement) —
+ * le combat reste STRICTEMENT en 4 directions (défaut false).
+ * Retourne un tableau [from, ..., to].
+ * Fallback sur [from, to] (ligne droite) si aucun chemin n'existe.
+ */
 export function buildPath(
   grid: Cell[][],
   from: Position,
   to: Position,
   blockedPositions: Set<string> = new Set(),
+  allowDiagonals = false,
 ): Position[] {
   if (from.x === to.x && from.y === to.y) return [from]
 
@@ -39,7 +55,14 @@ export function buildPath(
   while (queue.length > 0) {
     const pos = queue.shift()!
     if (key(pos) === endKey) break
-    for (const n of getNeighbors(grid, pos)) {
+    const neighbors = getNeighbors(grid, pos)
+    if (allowDiagonals) {
+      for (const o of DIAGONAL_OFFSETS) {
+        const cell = getCell(grid, { x: pos.x + o.x, y: pos.y + o.y })
+        if (cell && cell.walkable) neighbors.push(cell)
+      }
+    }
+    for (const n of neighbors) {
       const nk = key(n.position)
       if (blockedPositions.has(nk)) continue
       if (!parentKey.has(nk)) {

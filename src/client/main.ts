@@ -1030,11 +1030,11 @@ function engageCombatGroup(group: MonsterGroup): void {
     (runTarget.x === player.position.x && runTarget.y === player.position.y)
 
   if (!alreadyThere) {
-    const path = buildPath(gameState.grid, player.position, runTarget!, new Set())
+    const path = buildPath(gameState.grid, player.position, runTarget!, new Set(), true)
     const isValidPath = path.length >= 2 && path.every((p, i) => {
       if (i === 0) return true
       const prev = path[i - 1]!
-      return Math.abs(p.x - prev.x) + Math.abs(p.y - prev.y) === 1
+      return Math.max(Math.abs(p.x - prev.x), Math.abs(p.y - prev.y)) === 1
     })
 
     if (isValidPath) {
@@ -1124,13 +1124,14 @@ function handleExplorationClick(pos: Position): void {
       .filter(e => e.id !== player.id && e.hp > 0)
       .map(e => `${e.position.x},${e.position.y}`),
   )
-  const path = buildPath(gameState.grid, player.position, pos, blockedForAnim)
+  // allowDiagonals=true : exploration uniquement — le combat reste en 4 directions.
+  const path = buildPath(gameState.grid, player.position, pos, blockedForAnim, true)
 
-  // Vérifier que chaque pas est adjacent (sinon buildPath a renvoyé son fallback = pas de chemin réel)
+  // Chebyshev distance ≤ 1 : accepte les 8 directions (orthogonales + diagonales).
   const isValidPath = path.every((p, i) => {
     if (i === 0) return true
     const prev = path[i - 1]!
-    return Math.abs(p.x - prev.x) + Math.abs(p.y - prev.y) === 1
+    return Math.max(Math.abs(p.x - prev.x), Math.abs(p.y - prev.y)) === 1
   })
   if (!isValidPath) return
 
