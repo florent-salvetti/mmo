@@ -219,6 +219,32 @@ export function renderGrid(
   }
 }
 
+/** Surligne les cases de sortie (transitions de map) en ambré — exploration uniquement. */
+export function renderExitHighlights(
+  ctx: CanvasRenderingContext2D,
+  cells: Cell[],
+  origin: ScreenPos,
+): void {
+  for (const cell of cells) {
+    const { screenX, screenY } = gridToScreen(cell.position, origin)
+    const halfW = TILE_WIDTH  / 2
+    const halfH = TILE_HEIGHT / 2
+
+    ctx.beginPath()
+    ctx.moveTo(screenX,         screenY - halfH)
+    ctx.lineTo(screenX + halfW, screenY)
+    ctx.lineTo(screenX,         screenY + halfH)
+    ctx.lineTo(screenX - halfW, screenY)
+    ctx.closePath()
+
+    ctx.fillStyle   = 'rgba(255, 185, 0, 0.22)'
+    ctx.strokeStyle = 'rgba(255, 200, 60, 0.80)'
+    ctx.lineWidth   = 1.5
+    ctx.fill()
+    ctx.stroke()
+  }
+}
+
 /** Dessine les surlignages bleus sur les cases atteignables. */
 export function renderHighlights(
   ctx: CanvasRenderingContext2D,

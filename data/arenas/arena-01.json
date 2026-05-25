@@ -1,0 +1,22 @@
+{
+  "id": "arena-01",
+  "width": 12,
+  "height": 12,
+  "obstacles": [
+    { "x": 5, "y": 4, "type": "cube" },
+    { "x": 6, "y": 4, "type": "cube" },
+    { "x": 5, "y": 5, "type": "hole" },
+    { "x": 6, "y": 5, "type": "hole" },
+    { "x": 6, "y": 6, "type": "cube" },
+    { "x": 5, "y": 7, "type": "hole" },
+    { "x": 6, "y": 7, "type": "cube" }
+  ],
+  "playerSpawn": { "x": 1, "y": 5 },
+  "enemySpawns": [
+    { "x": 10, "y": 5 },
+    { "x": 10, "y": 4 },
+    { "x": 10, "y": 6 },
+    { "x": 9,  "y": 4 },
+    { "x": 9,  "y": 6 }
+  ]
+}

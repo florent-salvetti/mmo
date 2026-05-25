@@ -1,4 +1,4 @@
-import type { Cell, Entity, GameState, MapDefinition, MonsterGroup, Position } from '../shared/types'
+import type { Cell, CombatArena, Entity, GameState, MapDefinition, MonsterGroup, Position } from '../shared/types'
 
 /**
  * Construit le GameState initial (exploration) à partir d'une définition de map.
@@ -88,6 +88,70 @@ export function createCombatStateFromGroup(
       team:         'enemy' as const,
       creatureType: m.creatureType,
       position:     { x: pos.x, y: pos.y },
+      hp:           m.hp,
+      maxHp:        m.maxHp,
+      ap:           m.ap,
+      maxAp:        m.maxAp,
+      mp:           m.mp,
+      maxMp:        m.maxMp,
+    }
+  })
+
+  return {
+    grid,
+    entities:        [playerEntity, ...enemies],
+    currentEntityId: playerEntity.id,
+    turn:            1,
+    status:          'ongoing',
+  }
+}
+
+/**
+ * Construit le GameState de COMBAT depuis une arène dédiée et un groupe de monstres.
+ * - La grille vient de l'arène (indépendante des maps d'exploration).
+ * - Le joueur est placé à arena.playerSpawn, PA et PM restaurés au maximum.
+ * - Les monstres occupent arena.enemySpawns[i] (le dernier spawn est réutilisé si le
+ *   groupe est plus grand que le nombre de slots disponibles).
+ * Fonction pure : même entrée → même sortie, aucun effet de bord.
+ */
+export function createCombatStateFromArena(
+  arena: CombatArena,
+  group: MonsterGroup,
+  player: Entity,
+): GameState {
+  const obstacleIndex = new Map(
+    arena.obstacles.map(o => [`${o.x},${o.y}`, o.type] as const),
+  )
+
+  const grid: Cell[][] = Array.from({ length: arena.height }, (_, y) =>
+    Array.from({ length: arena.width }, (_, x) => {
+      const obstacle = obstacleIndex.get(`${x},${y}`)
+      return { position: { x, y }, walkable: obstacle === undefined, obstacle }
+    }),
+  )
+
+  const playerEntity: Entity = {
+    id:       player.id,
+    name:     player.name,
+    team:     'player',
+    position: { ...arena.playerSpawn },
+    hp:       player.hp,
+    maxHp:    player.maxHp,
+    ap:       player.maxAp,
+    maxAp:    player.maxAp,
+    mp:       player.maxMp,
+    maxMp:    player.maxMp,
+  }
+
+  const lastSpawn = arena.enemySpawns[arena.enemySpawns.length - 1]!
+  const enemies: Entity[] = group.monsters.map((m, i) => {
+    const pos = arena.enemySpawns[i] ?? lastSpawn
+    return {
+      id:           m.id,
+      name:         m.name,
+      team:         'enemy' as const,
+      creatureType: m.creatureType,
+      position:     { ...pos },
       hp:           m.hp,
       maxHp:        m.maxHp,
       ap:           m.ap,

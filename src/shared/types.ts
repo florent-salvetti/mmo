@@ -180,6 +180,30 @@ export type MapDefinition = {
 }
 
 // ---------------------------------------------------------------------------
+// Arènes de combat
+// ---------------------------------------------------------------------------
+
+/**
+ * Un terrain de combat dédié, indépendant des maps d'exploration.
+ * Contient uniquement ce dont le moteur de combat a besoin : la grille et les
+ * points de spawn. Les stats des combattants arrivent depuis l'état du jeu.
+ */
+export type CombatArena = {
+  id: string
+  width: number
+  height: number
+  obstacles: ObstacleEntry[]
+  /** Position de départ du joueur au lancement du combat. */
+  playerSpawn: Position
+  /**
+   * Positions de départ des ennemis (index 0 = 1er monstre du groupe, etc.).
+   * Prévoir autant de slots que le plus grand groupe possible.
+   * Si le groupe a plus de monstres que de spawns, le dernier spawn est réutilisé.
+   */
+  enemySpawns: Position[]
+}
+
+// ---------------------------------------------------------------------------
 // Sorts
 // ---------------------------------------------------------------------------
 

@@ -1,13 +1,14 @@
-import type { Cell, Entity, GameState, MapDefinition, MonsterGroup, Position } from '../shared/types'
-import { createGameStateFromMap, createCombatStateFromGroup } from '../core/mapLoader'
+import type { Cell, CombatArena, Entity, GameState, MapDefinition, MonsterGroup, Position } from '../shared/types'
+import { createGameStateFromMap, createCombatStateFromArena } from '../core/mapLoader'
 import combat01Raw from '../../data/maps/combat-01.json'
 import combat02Raw from '../../data/maps/combat-02.json'
+import arena01Raw  from '../../data/arenas/arena-01.json'
 import { getReachableCells } from '../core/movement'
 import { getSpell, getSpellTargetCells } from '../core/spells'
 import { getCell } from '../core/grid'
 import { applyAction } from '../core/reducer'
 import { getAIAction } from '../core/ai'
-import { renderGrid, renderHighlights, renderSpellRange, renderCubesAndEntities, renderDamageNumbers, spritesReady, hitTestEntitySprite, hasSpriteAnimation, triggerAttackAnimation, resetAttackAnimations, type PlayerDirection } from './render/gridRenderer'
+import { renderGrid, renderHighlights, renderSpellRange, renderExitHighlights, renderCubesAndEntities, renderDamageNumbers, spritesReady, hitTestEntitySprite, hasSpriteAnimation, triggerAttackAnimation, resetAttackAnimations, type PlayerDirection } from './render/gridRenderer'
 import { startDamageNumber, startFlash, tickEffects, getActiveDamageNumbers, getFlashingEntities, resetEffects } from './effects'
 import { computeOrigin, gridToScreen, screenToGrid, TILE_WIDTH, TILE_HEIGHT } from './render/projection'
 import { buildPath, startAnimation, tickAnimations, getVisualPosition, getCurrentSegment, resetAnimations } from './animation'
@@ -25,6 +26,16 @@ const mapRegistry = new Map<string, MapDefinition>([
   ['combat-01', combat01Raw as unknown as MapDefinition],
   ['combat-02', combat02Raw as unknown as MapDefinition],
 ])
+
+/** Arène de combat dédiée — terrain indépendant des maps d'exploration. */
+const combatArena: CombatArena = arena01Raw as unknown as CombatArena
+
+/**
+ * Contexte d'exploration mémorisé au déclenchement d'un combat.
+ * Utilisé en brique 3 pour retourner exactement là d'où on est parti.
+ */
+let returnMapDef: MapDefinition | null = null
+let returnPlayerPosition: Position | null = null
 
 // ---------------------------------------------------------------------------
 // Canvas + origine isométrique
@@ -140,6 +151,7 @@ let hoveredPos:    Position | null = null
 const entityDirections = new Map<string, PlayerDirection>()
 let reachable:     Cell[]          = []
 let spellRange:    Cell[]          = []
+let exitCells:     Cell[]          = []
 let aiTurnActive:  boolean         = false
 let pendingAfterAnimation: (() => void) | null = null
 let rafId: number | null = null
@@ -370,6 +382,30 @@ function refreshSpellRange(): void {
   const spell = getSpell(activeSpellId)
   if (!spell) { spellRange = []; return }
   spellRange = getSpellTargetCells(gameState.grid, currentEntity(), spell)
+}
+
+/**
+ * Calcule les cases de bord qui mènent à une map voisine.
+ * Relit currentMapDef.neighbors : si 'est' existe → colonne la plus à droite, etc.
+ * N'inclut que les cases walkable (le joueur doit pouvoir s'y tenir pour sortir).
+ */
+function computeExitCells(): void {
+  exitCells = []
+  const neighbors = currentMapDef.neighbors
+  if (!neighbors) return
+  const gridH = gameState.grid.length
+  const gridW = gameState.grid[0]?.length ?? 0
+
+  for (const row of gameState.grid) {
+    for (const cell of row) {
+      const { x, y } = cell.position
+      if (!cell.walkable) continue
+      if (neighbors.est   && x === gridW - 1) { exitCells.push(cell); continue }
+      if (neighbors.ouest && x === 0)          { exitCells.push(cell); continue }
+      if (neighbors.nord  && y === 0)          { exitCells.push(cell); continue }
+      if (neighbors.sud   && y === gridH - 1)  { exitCells.push(cell); continue }
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -703,6 +739,10 @@ function render(): void {
 
   renderGrid(ctx, gameState.grid, origin)
 
+  if (gameMode === 'exploration') {
+    renderExitHighlights(ctx, exitCells, origin)
+  }
+
   // [MODE COMBAT] Surlignages uniquement en mode combat et pendant le tour du joueur.
   if (gameMode === 'combat' && !aiTurnActive) {
     if (mode === 'move') {
@@ -885,33 +925,34 @@ function checkCombatEnd(): void {
 
 /**
  * Revient en exploration après une VICTOIRE.
- * Retire le groupe vaincu de currentMapDef EN MÉMOIRE UNIQUEMENT — le JSON source
- * n'est pas touché. Si la map est rechargée depuis le registre (transition est/ouest
- * ou touche 1/2), tous ses groupes réapparaissent. C'est un comportement de session.
+ * Utilise le contexte mémorisé en brique 2 (returnMapDef / returnPlayerPosition)
+ * pour revenir exactement sur la map et la position d'avant le combat.
+ * Retire le groupe vaincu EN MÉMOIRE UNIQUEMENT — le JSON source n'est pas touché.
  */
 function returnToExploration(): void {
   combatEndScheduled = false
   summaryEl?.classList.remove('is-visible')
 
-  if (activeGroupId !== null) {
-    currentMapDef = {
-      ...currentMapDef,
-      monsterGroups: currentMapDef.monsterGroups.filter(g => g.id !== activeGroupId),
-    }
-    activeGroupId = null
-  }
+  const mapDef    = returnMapDef    ?? currentMapDef
+  const playerPos = returnPlayerPosition ?? mapDef.player.startPosition
 
-  const playerPos = preRunPlayerPos ?? currentMapDef.player.startPosition
-  preRunPlayerPos = null
+  // Retire le groupe vaincu de la map d'exploration (session uniquement).
+  const cleanMapDef = activeGroupId !== null
+    ? { ...mapDef, monsterGroups: mapDef.monsterGroups.filter(g => g.id !== activeGroupId) }
+    : mapDef
+
+  activeGroupId        = null
+  returnMapDef         = null
+  returnPlayerPosition = null
 
   gameMode = 'exploration'
   combatAppEl?.classList.add('mode-exploration')
-  loadMapForExploration(currentMapDef, playerPos)
+  loadMapForExploration(cleanMapDef, playerPos)
 }
 
 /**
  * Revient en exploration après une DÉFAITE.
- * Le groupe reste sur la map (pas vaincu). Le joueur réapparaît à la position de départ.
+ * Le groupe reste sur la map (pas vaincu). Le joueur réapparaît à sa position d'avant le combat.
  */
 function returnToExplorationDefeated(): void {
   combatEndScheduled = false
@@ -920,12 +961,15 @@ function returnToExplorationDefeated(): void {
   stopTimer()
   activeGroupId = null
 
-  const playerPos = preRunPlayerPos ?? currentMapDef.player.startPosition
-  preRunPlayerPos = null
+  const mapDef    = returnMapDef    ?? currentMapDef
+  const playerPos = returnPlayerPosition ?? mapDef.player.startPosition
+
+  returnMapDef         = null
+  returnPlayerPosition = null
 
   gameMode = 'exploration'
   combatAppEl?.classList.add('mode-exploration')
-  loadMapForExploration(currentMapDef, playerPos)
+  loadMapForExploration(mapDef, playerPos)
 }
 
 /**
@@ -972,11 +1016,6 @@ function engageCombatGroup(group: MonsterGroup): void {
   pendingAfterAnimation = null
   resetAnimations()
 
-  // Position de départ en combat choisie aléatoirement parmi les 3 prédéfinies
-  const selectedCombatPos: Position | null = group.playerStartPositions
-    ? group.playerStartPositions[Math.floor(Math.random() * 3)]!
-    : null
-
   // Cible de la course : le monstre le plus proche du joueur
   const runTarget = [...group.monsters]
     .sort((a, b) =>
@@ -1008,17 +1047,17 @@ function engageCombatGroup(group: MonsterGroup): void {
       entityDirections.set(player.id, directionFromPath(path))
       startAnimation(player.id, path, performance.now())
       combatRunActive = true
-      pendingAfterAnimation = () => launchCombat(group, player.id, selectedCombatPos)
+      pendingAfterAnimation = () => launchCombat(group, player.id)
       startRenderLoop()
       return
     }
   }
 
-  launchCombat(group, player.id, selectedCombatPos)
+  launchCombat(group, player.id)
 }
 
 /** Initialise réellement le GameState de combat et bascule le mode. */
-function launchCombat(group: MonsterGroup, playerId: string, playerCombatPos: Position | null): void {
+function launchCombat(group: MonsterGroup, playerId: string): void {
   combatRunActive = false
   const player = gameState.entities.find(e => e.id === playerId)
   if (!player) return
@@ -1027,7 +1066,11 @@ function launchCombat(group: MonsterGroup, playerId: string, playerCombatPos: Po
   if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null }
   pendingAfterAnimation = null
 
-  gameState          = createCombatStateFromGroup(currentMapDef, group, player, playerCombatPos ?? undefined)
+  // Mémorise le contexte d'exploration pour le retour après combat (brique 3).
+  returnMapDef         = currentMapDef
+  returnPlayerPosition = { ...player.position }
+
+  gameState          = createCombatStateFromArena(combatArena, group, player)
   activeGroupId      = group.id
   combatEndScheduled = false
 
@@ -1399,6 +1442,7 @@ function loadMapForExploration(def: MapDefinition, playerEntry: Position): void 
   initEntityDirections()
   refreshReachable()
   refreshSpellRange()
+  computeExitCells()
 
   handleResize()
 }
@@ -1479,6 +1523,7 @@ combatAppEl?.classList.add('mode-exploration')     // démarre en exploration
 initEntityDirections()
 refreshReachable()
 refreshSpellRange()
+computeExitCells()
 handleResize()                                     // dimensionne le canvas et premier rendu
 new ResizeObserver(handleResize).observe(canvas)   // recalcul à chaque resize de fenêtre
 spritesReady.then(() => { render(); startRenderLoop() })  // relance + démarre la boucle d'animation sprite
