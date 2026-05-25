@@ -113,9 +113,16 @@ export function hasSpriteAnimation(): boolean {
   return loadedSheets.size > 0
 }
 
-// Spritesheet utilisée pour le joueur — étape 1 : Idle dir1 uniquement.
-const KNIGHT_IDLE_PNG  = '/sprites/KnightBasic/Idle/Knight_Idle_dir1.png'
-const KNIGHT_IDLE_JSON = '/sprites/KnightBasic/Idle/Knight_Idle_dir1.json'
+// Correspondance direction de jeu → numéro de direction du pack Knight.
+// dir1 = SE, dir3 = SO, dir5 = NO, dir7 = NE (vérifié visuellement sur les sprites).
+const KNIGHT_DIR: Record<PlayerDirection, number> = { SE: 7, SO: 1, NO: 3, NE: 5 }
+
+function knightIdlePng(dir: PlayerDirection): string {
+  return `/sprites/KnightBasic/Idle/Knight_Idle_dir${KNIGHT_DIR[dir]}.png`
+}
+function knightIdleJson(dir: PlayerDirection): string {
+  return `/sprites/KnightBasic/Idle/Knight_Idle_dir${KNIGHT_DIR[dir]}.json`
+}
 
 /**
  * Taille d'affichage des frames Knight (frames carrées 256×256).
@@ -150,7 +157,7 @@ export const spritesReady: Promise<void> = Promise.all([
     loadSprite(fallbackSpritePath(prefix)),
     ...DIRECTIONS.map(dir => loadSprite(spritePath(prefix, dir))),
   ]),
-  loadSpritesheet(KNIGHT_IDLE_PNG, KNIGHT_IDLE_JSON),
+  ...DIRECTIONS.map(dir => loadSpritesheet(knightIdlePng(dir), knightIdleJson(dir))),
 ]).then(() => undefined)
 
 /**
@@ -253,7 +260,7 @@ function drawEntity(
 
   if (entity.team === 'player') {
     // ── Joueur : spritesheet Knight (frame 0 Idle) ──────────────────────────
-    const sheet = loadedSheets.get(KNIGHT_IDLE_PNG)
+    const sheet = loadedSheets.get(knightIdlePng(dir))
     if (sheet && sheet.frames.length > 0) {
       const fi      = getCurrentFrame(sheet.durations, performance.now())
       const frame   = sheet.frames[fi]!
