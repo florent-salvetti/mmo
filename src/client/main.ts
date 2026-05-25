@@ -14,8 +14,8 @@ import { getUpcomingTurns } from '../core/turnOrder'
 // État initial de démonstration
 // ---------------------------------------------------------------------------
 
-const GRID_W = 10
-const GRID_H = 10
+const GRID_W = 12
+const GRID_H = 12
 // Trous : bloquent le mouvement, transparents pour la ligne de vue
 const HOLES = new Set(['2,3', '2,4', '2,5'])
 // Cubes : bloquent le mouvement ET la ligne de vue
@@ -36,9 +36,9 @@ let gameState: GameState = {
   entities: [
     { id: 'player-1', name: 'Kirito', team: 'player',
       position: { x: 1, y: 1 }, hp: 100, maxHp: 100, ap: 6, maxAp: 6, mp: 3, maxMp: 3 },
-    { id: 'enemy-1', name: 'Mob A', team: 'enemy', creatureType: 'sanglier',
+    { id: 'enemy-1', name: 'Sanglier A', team: 'enemy', creatureType: 'sanglier',
       position: { x: 4, y: 1 }, hp: 40, maxHp: 40, ap: 6, maxAp: 6, mp: 2, maxMp: 2 },
-    { id: 'enemy-2', name: 'Mob B', team: 'enemy', creatureType: 'sanglier',
+    { id: 'enemy-2', name: 'Sanglier B', team: 'enemy', creatureType: 'sanglier',
       position: { x: 5, y: 7 }, hp: 40, maxHp: 40, ap: 6, maxAp: 6, mp: 2, maxMp: 2 },
   ],
   currentEntityId: 'player-1',
@@ -243,6 +243,40 @@ function pushLog(html: string, type?: string): void {
   if (hudLogCountEl) hudLogCountEl.textContent = String(logEntries.length)
 }
 
+/**
+ * Génère une ou plusieurs entrées de journal pour un lancer de sort.
+ * Compare prev/next pour détecter les dégâts et les morts sans avoir besoin
+ * de connaître la cible à l'avance (fonctionne aussi pour la charge multi-cases).
+ */
+function logSpellUse(prev: GameState, next: GameState, casterId: string, spellId: string): void {
+  const caster = prev.entities.find(e => e.id === casterId)
+  const spell  = getSpell(spellId)
+  if (!caster || !spell) return
+
+  const casterCls = caster.team === 'player' ? 'actor' : 'target'
+
+  const hits: Array<{ name: string; cls: string; dmg: number; died: boolean }> = []
+  for (const nextEnt of next.entities) {
+    const prevEnt = prev.entities.find(e => e.id === nextEnt.id)
+    if (!prevEnt || nextEnt.hp >= prevEnt.hp) continue
+    hits.push({
+      name: prevEnt.name,
+      cls:  prevEnt.team === 'player' ? 'actor' : 'target',
+      dmg:  prevEnt.hp - nextEnt.hp,
+      died: nextEnt.hp <= 0,
+    })
+  }
+
+  if (hits.length > 0) {
+    for (const hit of hits) {
+      pushLog(`<span class="${casterCls}">${caster.name}</span> lance <b>${spell.name}</b> → <span class="${hit.cls}">${hit.name}</span> <span class="dmg">−${hit.dmg}</span>`)
+      if (hit.died) pushLog(`<span class="${hit.cls}">${hit.name}</span> est éliminé.`, 'system')
+    }
+  } else {
+    pushLog(`<span class="${casterCls}">${caster.name}</span> lance <b>${spell.name}</b>.`)
+  }
+}
+
 function refreshReachable(): void {
   const mover = currentEntity()
   reachable = getReachableCells(gameState.grid, mover, gameState.entities, mover.mp)
@@ -350,6 +384,7 @@ function runAIStep(): void {
   gameState = applyAction(gameState, action)
   if (action.type === 'USE_SPELL') {
     triggerHitEffects(prevState, gameState)
+    logSpellUse(prevState, gameState, action.entityId, action.spellId)
     // Orienter le lanceur vers sa cible (charge → direction du mouvement ; sinon → direction vers la cible).
     const prevCaster = prevState.entities.find(e => e.id === action.entityId)
     const nextCaster = gameState.entities.find(e => e.id === action.entityId)
@@ -374,6 +409,8 @@ function runAIStep(): void {
   }
 
   if (action.type === 'END_TURN') {
+    const prevName = prevState.entities.find(e => e.id === prevState.currentEntityId)?.name ?? '?'
+    pushLog(`<span class="target">${prevName}</span> termine son tour.`, 'system')
     if (isCurrentEntityEnemy()) {
       setTimeout(runAIStep, AI_STEP_DELAY_MS)
     } else {
@@ -760,7 +797,9 @@ canvas.addEventListener('click', (e) => {
       type: 'USE_SPELL', entityId, spellId: activeSpellId, target: pos,
     })
     if (gameState !== prevState) {
+      mode = 'move'
       triggerHitEffects(prevState, gameState)
+      logSpellUse(prevState, gameState, entityId, activeSpellId)
 
       // Si le lanceur s'est physiquement déplacé (ex. charge), animer le glissement.
       const prevCaster = prevState.entities.find(e => e.id === entityId)
