@@ -7,7 +7,7 @@ import { getSpell, getSpellTargetCells } from '../core/spells'
 import { getCell } from '../core/grid'
 import { applyAction } from '../core/reducer'
 import { getAIAction } from '../core/ai'
-import { renderGrid, renderHighlights, renderSpellRange, renderCubesAndEntities, renderDamageNumbers, spritesReady, hitTestEntitySprite, hasSpriteAnimation, type PlayerDirection } from './render/gridRenderer'
+import { renderGrid, renderHighlights, renderSpellRange, renderCubesAndEntities, renderDamageNumbers, spritesReady, hitTestEntitySprite, hasSpriteAnimation, triggerAttackAnimation, resetAttackAnimations, type PlayerDirection } from './render/gridRenderer'
 import { startDamageNumber, startFlash, tickEffects, getActiveDamageNumbers, getFlashingEntities, resetEffects } from './effects'
 import { computeOrigin, gridToScreen, screenToGrid, TILE_WIDTH, TILE_HEIGHT } from './render/projection'
 import { buildPath, startAnimation, tickAnimations, getVisualPosition, getCurrentSegment, resetAnimations } from './animation'
@@ -723,7 +723,7 @@ function render(): void {
 
   const visualEntities    = getVisualEntities()
   const flashingEntities  = getFlashingEntities(now)
-  renderCubesAndEntities(ctx, gameState.grid, visualEntities, origin, entityDirections, flashingEntities)
+  renderCubesAndEntities(ctx, gameState.grid, visualEntities, origin, entityDirections, flashingEntities, gameMode === 'combat')
   if (gameMode === 'combat') {
     renderDamageNumbers(ctx, getActiveDamageNumbers(now), visualEntities, origin)  // [MODE COMBAT]
   }
@@ -1045,6 +1045,7 @@ function launchCombat(group: MonsterGroup, playerId: string, playerCombatPos: Po
   if (hudLogCountEl)   hudLogCountEl.textContent = ''
   resetEffects()
   resetAnimations()
+  resetAttackAnimations()
 
   initEntityDirections()
   refreshReachable()
@@ -1170,6 +1171,7 @@ canvas.addEventListener('click', (e) => {
       mode = 'move'
       triggerHitEffects(prevState, gameState)
       logSpellUse(prevState, gameState, entityId, activeSpellId)
+      triggerAttackAnimation(entityId)
 
       // Si le lanceur s'est physiquement déplacé (ex. charge), animer le glissement.
       const prevCaster = prevState.entities.find(e => e.id === entityId)
@@ -1329,6 +1331,7 @@ export function loadMap(def: MapDefinition): void {
   if (hudLogCountEl)   hudLogCountEl.textContent = ''
   resetEffects()
   resetAnimations()
+  resetAttackAnimations()
 
   // Réinitialiser les orientations et les cases atteignables
   initEntityDirections()
@@ -1391,6 +1394,7 @@ function loadMapForExploration(def: MapDefinition, playerEntry: Position): void 
   entityDirections.clear()
   resetEffects()
   resetAnimations()
+  resetAttackAnimations()
 
   initEntityDirections()
   refreshReachable()

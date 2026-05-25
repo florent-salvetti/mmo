@@ -63,6 +63,9 @@ type SpritesheetEntry = { image: HTMLImageElement; frames: FrameRect[]; duration
 /** Cache spritesheet : chemin PNG → { image, frames[], durations[] }. */
 const loadedSheets = new Map<string, SpritesheetEntry>()
 
+/** Horodatage de début d'animation d'attaque one-shot : entityId → startTime (ms). */
+const attackAnimations = new Map<string, number>()
+
 /** Format minimal du JSON PixelOver dont on a besoin. */
 type PixelOverJSON = {
   frames: Array<{ frame: { x: number; y: number; w: number; h: number }; duration: number }>
@@ -91,17 +94,18 @@ async function loadSpritesheet(pngSrc: string, jsonSrc: string): Promise<void> {
 }
 
 /**
- * Calcule l'index de la frame à afficher à l'instant `now` (ms) pour une animation en boucle.
- * Utilise les durées par frame du JSON PixelOver.
+ * Calcule l'index de la frame à afficher.
+ * `loop=true` (défaut) : boucle en continu via modulo.
+ * `loop=false` : one-shot — se fige sur la dernière frame une fois terminée.
  */
-function getCurrentFrame(durations: number[], now: number): number {
+function getCurrentFrame(durations: number[], t: number, loop = true): number {
   if (durations.length === 0) return 0
   const total = durations.reduce((a, b) => a + b, 0)
   if (total === 0) return 0
-  let t = now % total
+  let time = loop ? t % total : t
   for (let i = 0; i < durations.length; i++) {
-    t -= durations[i]!
-    if (t < 0) return i
+    time -= durations[i]!
+    if (time < 0) return i
   }
   return durations.length - 1
 }
@@ -112,6 +116,16 @@ function getCurrentFrame(durations: number[], now: number): number {
  */
 export function hasSpriteAnimation(): boolean {
   return loadedSheets.size > 0
+}
+
+/** Déclenche l'animation d'attaque one-shot pour une entité. Appelé depuis main.ts. */
+export function triggerAttackAnimation(entityId: string): void {
+  attackAnimations.set(entityId, performance.now())
+}
+
+/** Vide toutes les animations d'attaque (reset de combat ou de map). */
+export function resetAttackAnimations(): void {
+  attackAnimations.clear()
 }
 
 // Correspondance direction de jeu → numéro de direction du pack Knight.
@@ -132,6 +146,13 @@ function knightWalkJson(dir: PlayerDirection): string {
   return `/sprites/KnightBasic/Walk/Knight_Walk_dir${KNIGHT_DIR[dir]}.json`
 }
 
+function knightAttackPng(dir: PlayerDirection): string {
+  return `/sprites/KnightBasic/Attack/Knight_Attack_dir${KNIGHT_DIR[dir]}.png`
+}
+function knightAttackJson(dir: PlayerDirection): string {
+  return `/sprites/KnightBasic/Attack/Knight_Attack_dir${KNIGHT_DIR[dir]}.json`
+}
+
 /**
  * Taille d'affichage des frames Knight (frames carrées 256×256).
  * Le personnage occupe ~25–30 % de la frame → ajuster ici si trop grand/petit.
@@ -143,6 +164,8 @@ const KNIGHT_DISPLAY_W = 160
  * Ajuster entre 0.5 et 0.7 pour aligner les pieds avec le sol isométrique.
  */
 const KNIGHT_FEET_RATIO = 0.50
+/** Multiplicateur de vitesse de l'animation d'attaque. >1 = plus rapide. */
+const KNIGHT_ATTACK_SPEED = 2.0
 
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -167,6 +190,7 @@ export const spritesReady: Promise<void> = Promise.all([
   ]),
   ...DIRECTIONS.map(dir => loadSpritesheet(knightIdlePng(dir), knightIdleJson(dir))),
   ...DIRECTIONS.map(dir => loadSpritesheet(knightWalkPng(dir), knightWalkJson(dir))),
+  ...DIRECTIONS.map(dir => loadSpritesheet(knightAttackPng(dir), knightAttackJson(dir))),
 ]).then(() => undefined)
 
 /**
@@ -262,6 +286,7 @@ function drawEntity(
   origin: ScreenPos,
   directions: Map<string, PlayerDirection>,
   flashingEntities: Map<string, number>,
+  showHpBars = true,
 ): void {
   const { screenX, screenY } = gridToScreen(entity.position, origin)
   const dir = directions.get(entity.id) ?? 'SE'
@@ -269,11 +294,30 @@ function drawEntity(
 
   if (entity.team === 'player') {
     // ── Joueur : spritesheet Knight (frame 0 Idle) ──────────────────────────
-    const now     = performance.now()
-    const moving  = getVisualPosition(entity.id, now) !== null
-    const sheet   = loadedSheets.get(moving ? knightWalkPng(dir) : knightIdlePng(dir))
+    const now      = performance.now()
+    // Priorité : Attack (one-shot) > Walk > Idle
+    let sheetKey: string
+    let frameTime  = now
+    let frameLoop  = true
+    const atkStart = attackAnimations.get(entity.id)
+    if (atkStart !== undefined) {
+      const atkSheet = loadedSheets.get(knightAttackPng(dir))
+      const atkTotal = atkSheet ? atkSheet.durations.reduce((a, b) => a + b, 0) / KNIGHT_ATTACK_SPEED : 0
+      const elapsed  = now - atkStart
+      if (elapsed < atkTotal) {
+        sheetKey  = knightAttackPng(dir)
+        frameTime = elapsed * KNIGHT_ATTACK_SPEED
+        frameLoop = false
+      } else {
+        attackAnimations.delete(entity.id)
+        sheetKey = (getVisualPosition(entity.id, now) !== null) ? knightWalkPng(dir) : knightIdlePng(dir)
+      }
+    } else {
+      sheetKey = (getVisualPosition(entity.id, now) !== null) ? knightWalkPng(dir) : knightIdlePng(dir)
+    }
+    const sheet = loadedSheets.get(sheetKey)
     if (sheet && sheet.frames.length > 0) {
-      const fi      = getCurrentFrame(sheet.durations, now)
+      const fi      = getCurrentFrame(sheet.durations, frameTime, frameLoop)
       const frame   = sheet.frames[fi]!
       const dw      = KNIGHT_DISPLAY_W
       // Ancre les pieds (à KNIGHT_FEET_RATIO de la hauteur de frame) sur le point-sol (screenY)
@@ -319,14 +363,16 @@ function drawEntity(
     }
   }
 
-  const ratio  = entity.hp / entity.maxHp
-  const barW   = 20
-  const barH   = 3
-  const barClr = ratio > 0.6 ? '#4caf50' : ratio > 0.3 ? '#ffc107' : '#f44336'
-  ctx.fillStyle = '#222233'
-  ctx.fillRect(screenX - barW / 2, hpBarY, barW, barH)
-  ctx.fillStyle = barClr
-  ctx.fillRect(screenX - barW / 2, hpBarY, barW * ratio, barH)
+  if (showHpBars) {
+    const ratio  = entity.hp / entity.maxHp
+    const barW   = 20
+    const barH   = 3
+    const barClr = ratio > 0.6 ? '#4caf50' : ratio > 0.3 ? '#ffc107' : '#f44336'
+    ctx.fillStyle = '#222233'
+    ctx.fillRect(screenX - barW / 2, hpBarY, barW, barH)
+    ctx.fillStyle = barClr
+    ctx.fillRect(screenX - barW / 2, hpBarY, barW * ratio, barH)
+  }
 
   const flashAlpha = flashingEntities.get(entity.id)
   if (flashAlpha !== undefined) {
@@ -351,10 +397,11 @@ export function renderEntities(
   origin: ScreenPos,
   directions: Map<string, PlayerDirection> = new Map(),
   flashingEntities: Map<string, number> = new Map(),
+  showHpBars = true,
 ): void {
   for (const entity of entities) {
     if (entity.hp <= 0) continue
-    drawEntity(ctx, entity, origin, directions, flashingEntities)
+    drawEntity(ctx, entity, origin, directions, flashingEntities, showHpBars)
   }
 }
 
@@ -369,6 +416,7 @@ export function renderCubesAndEntities(
   origin: ScreenPos,
   directions: Map<string, PlayerDirection> = new Map(),
   flashingEntities: Map<string, number> = new Map(),
+  showHpBars = true,
 ): void {
   type Item =
     | { kind: 'cube';   pos: Position; depth: number }
@@ -396,7 +444,7 @@ export function renderCubesAndEntities(
       const { screenX, screenY } = gridToScreen(item.pos, origin)
       drawCube(ctx, screenX, screenY)
     } else {
-      drawEntity(ctx, item.entity, origin, directions, flashingEntities)
+      drawEntity(ctx, item.entity, origin, directions, flashingEntities, showHpBars)
     }
   }
 }
