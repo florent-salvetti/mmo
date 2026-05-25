@@ -108,7 +108,7 @@ const SPELL_TIR_ARC    = 'tir-arc'
 const SPELL_CHARGE     = 'charge'
 const AI_STEP_DELAY_MS = 500  // pause entre chaque action IA (visible à l'écran)
 
-let gameMode:      GameMode = 'combat'
+let gameMode:      GameMode = 'exploration'
 let mode:          UIMode  = 'move'
 let activeSpellId: string  = SPELL_COUP_EPEE  // sort actif quand mode === 'spell'
 let hoveredPos:    Position | null = null
@@ -928,10 +928,8 @@ hudEndTurnBtn?.addEventListener('click', () => doEndTurn())
 document.addEventListener('keydown', (e) => {
   if (e.repeat) return
   switch (e.key.toUpperCase()) {
-    case 'A': selectSpell(SPELL_COUP_EPEE);      break
-    case 'Z': selectSpell(SPELL_TIR_ARC);        break
-    case 'E': setGameMode('exploration');         break
-    case 'C': setGameMode('combat');             break
+    case 'A': selectSpell(SPELL_COUP_EPEE); break
+    case 'Z': selectSpell(SPELL_TIR_ARC);  break
     case 'F':
     case ' ':
       e.preventDefault()
@@ -1111,19 +1109,26 @@ function tryMapTransition(clickedPos: Position, player: Entity): void {
 // ---------------------------------------------------------------------------
 
 document.addEventListener('keydown', (e) => {
-  if (e.key === '1') { loadMap(combat01Raw as unknown as MapDefinition); return }
-  if (e.key === '2') { loadMap(combat02Raw as unknown as MapDefinition); return }
+  if (e.key === '1') {
+    const def = combat01Raw as unknown as MapDefinition
+    loadMapForExploration(def, def.player.startPosition)
+    return
+  }
+  if (e.key === '2') {
+    const def = combat02Raw as unknown as MapDefinition
+    loadMapForExploration(def, def.player.startPosition)
+    return
+  }
 })
 
 // ---------------------------------------------------------------------------
 // Démarrage
 // ---------------------------------------------------------------------------
 
+combatAppEl?.classList.add('mode-exploration')     // démarre en exploration
 initEntityDirections()
 refreshReachable()
 refreshSpellRange()
 handleResize()                                     // dimensionne le canvas et premier rendu
 new ResizeObserver(handleResize).observe(canvas)   // recalcul à chaque resize de fenêtre
 spritesReady.then(() => render())                  // relance quand les sprites sont chargés
-pushLog(`Combat commencé. À <span class="actor">${currentEntity().name}</span> de jouer !`, 'system')
-startTurnTimer()
