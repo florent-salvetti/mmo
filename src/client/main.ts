@@ -57,6 +57,7 @@ const hudMpVal        = document.querySelector<HTMLElement>('.hud-res-val.mp')
 const hudMpBar        = document.querySelector<HTMLElement>('.hud-res-bar-fill.mp')
 const hudSpellButtons = document.querySelectorAll<HTMLButtonElement>('.hud-spell[data-spell-id]')
 const hudEndTurnBtn   = document.querySelector<HTMLButtonElement>('.hud-end-turn')
+const hudHintEl       = document.querySelector<HTMLElement>('.hud-hint')
 
 // ---------------------------------------------------------------------------
 // État de l'UI
@@ -343,6 +344,9 @@ function updateHudDOM(): void {
 
   // Bouton Fin de tour
   if (hudEndTurnBtn) hudEndTurnBtn.disabled = allDisabled
+
+  // Hint contextuel
+  if (hudHintEl) hudHintEl.textContent = computeHintText(entity)
 }
 
 /** Remplace la position des entités animées par leur position visuelle interpolée. */
@@ -440,6 +444,20 @@ function renderOverlay(): void {
   ctx.textBaseline = 'top'
 }
 
+/** Calcule le texte du hint contextuel selon l'état courant du jeu. */
+function computeHintText(entity: Entity): string {
+  if (gameState.status !== 'ongoing') return ''
+  if (aiTurnActive) return `Tour de ${entity.name}…`
+  const spell    = getSpell(activeSpellId)
+  const cdActive = entity.cooldowns?.[activeSpellId] ?? 0
+  const canCast  = spell !== undefined && entity.ap >= spell.apCost && cdActive === 0
+  if (mode === 'move') {
+    return entity.mp === 0 ? 'Plus de PM disponibles' : 'Clic case bleue = déplacer'
+  }
+  if (cdActive > 0) return `En recharge : ${cdActive} tour(s)`
+  return canCast ? 'Clic case orange = lancer' : 'PA insuffisants'
+}
+
 function renderHUD(ctx: CanvasRenderingContext2D, entity: Entity): void {
   const pad  = 16
   const barW = 120
@@ -503,17 +521,7 @@ function renderHUD(ctx: CanvasRenderingContext2D, entity: Entity): void {
   // Texte d'aide contextuel
   ctx.fillStyle = '#888888'
   ctx.font      = '10px monospace'
-  if (aiTurnActive) {
-    ctx.fillText(`Tour de ${entity.name}...`, pad, COUP_EPEE_BTN.y + COUP_EPEE_BTN.h + 6)
-  } else {
-    const spell    = getSpell(activeSpellId)
-    const cdActive = entity.cooldowns?.[activeSpellId] ?? 0
-    const canCast  = spell !== undefined && entity.ap >= spell.apCost && cdActive === 0
-    const hint     = mode === 'move'
-      ? (entity.mp === 0 ? 'Plus de PM disponibles' : 'Clic case bleue = deplacer')
-      : (cdActive > 0 ? `En recharge : ${cdActive} tour(s)` : (canCast ? 'Clic case orange = lancer' : 'PA insuffisants'))
-    ctx.fillText(hint, pad, COUP_EPEE_BTN.y + COUP_EPEE_BTN.h + 6)
-  }
+  ctx.fillText(computeHintText(entity), pad, COUP_EPEE_BTN.y + COUP_EPEE_BTN.h + 6)
 }
 
 /**
@@ -531,6 +539,39 @@ function buildDashAnimPath(from: Position, to: Position): Position[] {
     path.push({ ...cur })
   }
   return path
+}
+
+// ---------------------------------------------------------------------------
+// Actions UI réutilisables (canvas + boutons HTML)
+// ---------------------------------------------------------------------------
+
+/**
+ * Sélectionne un sort (passe en mode spell) ou revient en mode déplacement
+ * si le sort était déjà sélectionné. Sans effet pendant le tour ennemi ou si
+ * le sort est en cooldown.
+ */
+function selectSpell(spellId: string): void {
+  if (aiTurnActive) return
+  if ((currentEntity().cooldowns?.[spellId] ?? 0) > 0) return
+  if (mode === 'spell' && activeSpellId === spellId) {
+    mode = 'move'
+  } else {
+    activeSpellId = spellId
+    mode = 'spell'
+    refreshSpellRange()
+  }
+  render()
+}
+
+/** Termine le tour du joueur courant. Sans effet pendant le tour ennemi. */
+function doEndTurn(): void {
+  if (aiTurnActive) return
+  gameState = applyAction(gameState, { type: 'END_TURN', entityId: gameState.currentEntityId })
+  mode = 'move'
+  refreshReachable()
+  refreshSpellRange()
+  render()
+  if (isCurrentEntityEnemy()) startAITurn()
 }
 
 // ---------------------------------------------------------------------------
@@ -562,37 +603,24 @@ canvas.addEventListener('click', (e) => {
   const clickX = e.clientX - rect.left
   const clickY = e.clientY - rect.top
 
-  // Clic sur un bouton de sort : activer ce sort (re-cliquer le sort actif = retour mode déplacement).
+  // Clic sur un bouton de sort canvas.
   for (const { id, btn } of [
     { id: SPELL_COUP_EPEE, btn: COUP_EPEE_BTN },
     { id: SPELL_TIR_ARC,   btn: TIR_ARC_BTN },
     { id: SPELL_CHARGE,    btn: CHARGE_BTN },
   ]) {
     if (clickX >= btn.x && clickX <= btn.x + btn.w && clickY >= btn.y && clickY <= btn.y + btn.h) {
-      if ((currentEntity().cooldowns?.[id] ?? 0) > 0) return  // sort en recharge : clic ignoré
-      if (mode === 'spell' && activeSpellId === id) {
-        mode = 'move'
-      } else {
-        activeSpellId = id
-        mode = 'spell'
-        refreshSpellRange()
-      }
-      render()
+      selectSpell(id)
       return
     }
   }
 
-  // Clic sur le bouton "Fin de tour".
+  // Clic sur le bouton "Fin de tour" canvas.
   if (
     clickX >= END_TURN_BTN.x && clickX <= END_TURN_BTN.x + END_TURN_BTN.w &&
     clickY >= END_TURN_BTN.y && clickY <= END_TURN_BTN.y + END_TURN_BTN.h
   ) {
-    gameState = applyAction(gameState, { type: 'END_TURN', entityId: gameState.currentEntityId })
-    mode = 'move'
-    refreshReachable()
-    refreshSpellRange()
-    render()
-    if (isCurrentEntityEnemy()) startAITurn()
+    doEndTurn()
     return
   }
 
@@ -648,6 +676,21 @@ canvas.addEventListener('click', (e) => {
       startRenderLoop()  // la boucle RAF gère le rendu + l'animation des effets
     }
   }
+})
+
+// ---------------------------------------------------------------------------
+// Boutons HUD HTML
+// ---------------------------------------------------------------------------
+
+for (const btn of hudSpellButtons) {
+  btn.addEventListener('click', () => {
+    const spellId = btn.dataset['spellId']!
+    selectSpell(spellId)
+  })
+}
+
+hudEndTurnBtn?.addEventListener('click', () => {
+  doEndTurn()
 })
 
 // ---------------------------------------------------------------------------
