@@ -39,7 +39,8 @@ export function bresenhamLine(from: Position, to: Position): Position[] {
 /**
  * Retourne true si la case `from` a une ligne de vue directe vers `to`.
  *
- * Règle : une case non-walkable intermédiaire bloque la vue.
+ * Règle : seuls les cubes (obstacle === 'cube') bloquent la vue.
+ * Les trous (obstacle === 'hole') bloquent le mouvement mais pas la LdV.
  * Les cases de départ et d'arrivée ne sont jamais testées — l'entité
  * qui se trouve sur ces cases ne se bloque pas elle-même.
  */
@@ -53,7 +54,7 @@ export function hasLineOfSight(
   // i=0 (départ) et i=length-1 (arrivée) sont ignorés intentionnellement.
   for (let i = 1; i < line.length - 1; i++) {
     const cell = getCell(grid, line[i]!)
-    if (!cell?.walkable) return false
+    if (cell && !cell.walkable && cell.obstacle !== 'hole') return false
   }
   return true
 }

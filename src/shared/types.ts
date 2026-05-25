@@ -20,6 +20,12 @@ export type Cell = {
   position: Position
   /** Si false, aucune entité ne peut s'y déplacer (mur, obstacle). */
   walkable: boolean
+  /**
+   * Type d'obstacle visuel (absent = case normale) :
+   *  - 'hole'  → trou : bloque le mouvement, transparent pour la ligne de vue.
+   *  - 'cube'  → bloc : bloque le mouvement ET la ligne de vue.
+   */
+  obstacle?: 'hole' | 'cube'
 }
 
 // ---------------------------------------------------------------------------

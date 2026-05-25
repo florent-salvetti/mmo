@@ -6,7 +6,7 @@ import { applyAction } from '../core/reducer'
 import { getAIAction } from '../core/ai'
 import { renderGrid, renderHighlights, renderSpellRange, renderEntities, renderDamageNumbers, spritesReady, type PlayerDirection } from './render/gridRenderer'
 import { startDamageNumber, startFlash, tickEffects, getActiveDamageNumbers, getFlashingEntities } from './effects'
-import { computeOrigin, screenToGrid } from './render/projection'
+import { computeOrigin, screenToGrid, TILE_WIDTH, TILE_HEIGHT } from './render/projection'
 import { buildPath, startAnimation, tickAnimations, getVisualPosition, getCurrentSegment } from './animation'
 import { getUpcomingTurns } from '../core/turnOrder'
 
@@ -16,13 +16,19 @@ import { getUpcomingTurns } from '../core/turnOrder'
 
 const GRID_W = 10
 const GRID_H = 10
-const BLOCKED = new Set(['2,3', '2,4', '2,5', '3,2', '7,6', '6,7', '6,6'])
+// Trous : bloquent le mouvement, transparents pour la ligne de vue
+const HOLES = new Set(['2,3', '2,4', '2,5'])
+// Cubes : bloquent le mouvement ET la ligne de vue
+const CUBES = new Set(['3,2', '7,6', '6,7', '6,6'])
 
 const grid: Cell[][] = Array.from({ length: GRID_H }, (_, y) =>
-  Array.from({ length: GRID_W }, (_, x) => ({
-    position: { x, y },
-    walkable: !BLOCKED.has(`${x},${y}`),
-  })),
+  Array.from({ length: GRID_W }, (_, x) => {
+    const key = `${x},${y}`
+    const obstacle = HOLES.has(key) ? 'hole' as const
+                   : CUBES.has(key) ? 'cube' as const
+                   : undefined
+    return { position: { x, y }, walkable: obstacle === undefined, obstacle }
+  }),
 )
 
 let gameState: GameState = {
@@ -48,10 +54,11 @@ const canvas = document.getElementById('game-canvas') as HTMLCanvasElement
 const ctx    = canvas.getContext('2d')!
 
 // Taille CSS courante et ratio de densité — mis à jour à chaque resize.
-let dpr    = 1
-let cssW   = 0
-let cssH   = 0
-let origin = { screenX: 0, screenY: 0 }
+let dpr       = 1
+let cssW      = 0
+let cssH      = 0
+let origin    = { screenX: 0, screenY: 0 }
+let gridScale = 1   // facteur d'agrandissement calculé au resize
 
 /**
  * Appelé au démarrage et à chaque resize de fenêtre.
@@ -70,7 +77,15 @@ function handleResize(): void {
   cssH = newCssH
   canvas.width  = Math.round(cssW * dpr)
   canvas.height = Math.round(cssH * dpr)
-  origin = computeOrigin(GRID_W, GRID_H, cssW, cssH)
+
+  // Taille de la grille en pixels natifs (sans scale)
+  const gridPixW = (GRID_W + GRID_H) * (TILE_WIDTH  / 2)
+  const gridPixH = (GRID_W + GRID_H) * (TILE_HEIGHT / 2)
+  // Scale pour remplir ~92 % de l'espace disponible
+  gridScale = Math.min(cssW / gridPixW, cssH / gridPixH) * 0.92
+
+  // L'origine est calculée dans l'espace logique (cssW/gridScale × cssH/gridScale)
+  origin = computeOrigin(GRID_W, GRID_H, cssW / gridScale, cssH / gridScale)
   render()
 }
 
@@ -552,9 +567,11 @@ function animationLoop(now: number): void {
 function render(): void {
   // Applique l'échelle DPR : tout ce qui est dessiné ensuite utilise des coordonnées
   // CSS (pixels logiques), quel que soit le devicePixelRatio.
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-  ctx.fillStyle = '#0f0f1a'
-  ctx.fillRect(0, 0, cssW, cssH)
+  const logW = cssW / gridScale
+  const logH = cssH / gridScale
+  ctx.setTransform(dpr * gridScale, 0, 0, dpr * gridScale, 0, 0)
+  ctx.fillStyle = '#060912'
+  ctx.fillRect(0, 0, logW, logH)
 
   renderGrid(ctx, gameState.grid, origin)
 
@@ -587,9 +604,11 @@ function render(): void {
 function renderOverlay(): void {
   if (gameState.status === 'ongoing') return
 
-  // Voile semi-transparent par-dessus la scène.
+  const logW = cssW / gridScale
+  const logH = cssH / gridScale
+
   ctx.fillStyle = 'rgba(0, 0, 0, 0.65)'
-  ctx.fillRect(0, 0, cssW, cssH)
+  ctx.fillRect(0, 0, logW, logH)
 
   const isVictory = gameState.status === 'victory'
   ctx.textAlign    = 'center'
@@ -597,13 +616,12 @@ function renderOverlay(): void {
 
   ctx.font      = 'bold 52px monospace'
   ctx.fillStyle = isVictory ? '#00ff88' : '#ff4455'
-  ctx.fillText(isVictory ? 'Victoire !' : 'Defaite...', cssW / 2, cssH / 2 - 20)
+  ctx.fillText(isVictory ? 'Victoire !' : 'Defaite...', logW / 2, logH / 2 - 20)
 
   ctx.font      = '16px monospace'
   ctx.fillStyle = '#888888'
-  ctx.fillText('Rechargez la page pour rejouer', cssW / 2, cssH / 2 + 36)
+  ctx.fillText('Rechargez la page pour rejouer', logW / 2, logH / 2 + 36)
 
-  // Réinitialiser l'alignement pour les autres draws.
   ctx.textAlign    = 'left'
   ctx.textBaseline = 'top'
 }
@@ -692,8 +710,8 @@ function doEndTurn(): void {
 function canvasPoint(e: MouseEvent): { screenX: number; screenY: number } {
   const rect = canvas.getBoundingClientRect()
   return {
-    screenX: (e.clientX - rect.left) * (cssW / rect.width),
-    screenY: (e.clientY - rect.top)  * (cssH / rect.height),
+    screenX: (e.clientX - rect.left) * (cssW / rect.width)  / gridScale,
+    screenY: (e.clientY - rect.top)  * (cssH / rect.height) / gridScale,
   }
 }
 

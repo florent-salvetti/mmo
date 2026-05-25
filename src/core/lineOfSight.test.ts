@@ -144,4 +144,17 @@ describe('hasLineOfSight', () => {
     const b = { x: 6, y: 4 }
     expect(hasLineOfSight(grid, a, b)).toBe(hasLineOfSight(grid, b, a))
   })
+
+  it('trou intermédiaire : bloque le mouvement mais pas la LdV → true', () => {
+    const grid = makeGrid(5, 1)
+    // Placer un trou au milieu : walkable=false, obstacle='hole'
+    grid[0]![2] = { position: { x: 2, y: 0 }, walkable: false, obstacle: 'hole' }
+    expect(hasLineOfSight(grid, { x: 0, y: 0 }, { x: 4, y: 0 })).toBe(true)
+  })
+
+  it('cube intermédiaire : bloque la LdV → false', () => {
+    const grid = makeGrid(5, 1)
+    grid[0]![2] = { position: { x: 2, y: 0 }, walkable: false, obstacle: 'cube' }
+    expect(hasLineOfSight(grid, { x: 0, y: 0 }, { x: 4, y: 0 })).toBe(false)
+  })
 })

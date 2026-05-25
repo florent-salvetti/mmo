@@ -2,10 +2,19 @@ import type { Cell, Entity, Position } from '../../shared/types'
 import type { ActiveDamageNumber } from '../effects'
 import { gridToScreen, TILE_WIDTH, TILE_HEIGHT, type ScreenPos } from './projection'
 
-const COLOR_WALKABLE    = '#2d5a4e'
-const COLOR_BLOCKED     = '#1e2030'
-const COLOR_STROKE      = '#4a9e8a'
-const COLOR_STROKE_DARK = '#2a3050'
+// Couleurs de la grille — calquées sur les tokens CSS du design
+const COLOR_CELL     = 'rgba(20, 30, 60, 0.55)'      // --cell-fill
+const COLOR_CELL_ALT = 'rgba(28, 42, 78, 0.55)'      // --cell-fill-alt
+const COLOR_GRID     = 'rgba(120, 180, 255, 0.18)'   // --grid-line
+
+// Couleurs du cube isométrique
+const CUBE_TOP    = '#4c5773'
+const CUBE_LEFT   = '#2b3145'
+const CUBE_RIGHT  = '#1c2030'
+const CUBE_STROKE = 'rgba(160, 200, 255, 0.38)'
+
+// Hauteur visible du cube en pixels (faces latérales)
+const CUBE_H = TILE_HEIGHT * 0.525
 
 // ─── Réglages des sprites — modifie ces constantes pour caler les entités ──────────
 /** Largeur du sprite joueur en pixels. */
@@ -73,7 +82,11 @@ function getSprite(prefix: string, dir: PlayerDirection): HTMLImageElement | nul
     ?? null
 }
 
-/** Dessine toute la grille isométrique sur le canvas. */
+/**
+ * Dessine toute la grille isométrique sur le canvas.
+ * Deux passes : d'abord toutes les dalles, puis les cubes par-dessus
+ * (le peintre assure que les cubes ne sont pas écrasés par les dalles voisines).
+ */
 export function renderGrid(
   ctx: CanvasRenderingContext2D,
   grid: Cell[][],
@@ -82,6 +95,15 @@ export function renderGrid(
   for (const row of grid) {
     for (const cell of row) {
       drawTile(ctx, cell, origin)
+    }
+  }
+  // Passe 2 : cubes isométriques par-dessus les dalles
+  for (const row of grid) {
+    for (const cell of row) {
+      if (cell.obstacle === 'cube') {
+        const { screenX, screenY } = gridToScreen(cell.position, origin)
+        drawCube(ctx, screenX, screenY)
+      }
     }
   }
 }
@@ -107,14 +129,12 @@ export function renderHighlights(
     ctx.lineTo(screenX - halfW, screenY)
     ctx.closePath()
 
-    ctx.fillStyle = isHovered ? 'rgba(80, 180, 255, 0.65)' : 'rgba(80, 180, 255, 0.28)'
+    ctx.fillStyle = isHovered ? 'rgba(77, 217, 255, 0.55)' : 'rgba(77, 217, 255, 0.22)'
     ctx.fill()
 
-    if (isHovered) {
-      ctx.strokeStyle = 'rgba(180, 230, 255, 0.9)'
-      ctx.lineWidth   = 1.5
-      ctx.stroke()
-    }
+    ctx.strokeStyle = isHovered ? 'rgba(77, 217, 255, 0.95)' : 'rgba(77, 217, 255, 0.50)'
+    ctx.lineWidth   = isHovered ? 1.5 : 1
+    ctx.stroke()
   }
 }
 
@@ -139,14 +159,12 @@ export function renderSpellRange(
     ctx.lineTo(screenX - halfW, screenY)
     ctx.closePath()
 
-    ctx.fillStyle = isHovered ? 'rgba(255, 120, 50, 0.65)' : 'rgba(255, 120, 50, 0.28)'
+    ctx.fillStyle = isHovered ? 'rgba(184, 108, 255, 0.55)' : 'rgba(184, 108, 255, 0.22)'
     ctx.fill()
 
-    if (isHovered) {
-      ctx.strokeStyle = 'rgba(255, 200, 150, 0.9)'
-      ctx.lineWidth   = 1.5
-      ctx.stroke()
-    }
+    ctx.strokeStyle = isHovered ? 'rgba(184, 108, 255, 0.95)' : 'rgba(184, 108, 255, 0.50)'
+    ctx.lineWidth   = isHovered ? 1.5 : 1
+    ctx.stroke()
   }
 }
 
@@ -251,21 +269,101 @@ export function renderDamageNumbers(
 
 function drawTile(ctx: CanvasRenderingContext2D, cell: Cell, origin: ScreenPos): void {
   const { screenX, screenY } = gridToScreen(cell.position, origin)
+  if (cell.obstacle === 'hole') { drawHole(ctx, screenX, screenY); return }
   const halfW = TILE_WIDTH  / 2
   const halfH = TILE_HEIGHT / 2
+  const alt   = (cell.position.x + cell.position.y) % 2 === 1
 
+  if (cell.obstacle === 'cube') {
+    // Dalle sombre sous le cube
+    ctx.beginPath()
+    ctx.moveTo(screenX,         screenY - halfH)
+    ctx.lineTo(screenX + halfW, screenY)
+    ctx.lineTo(screenX,         screenY + halfH)
+    ctx.lineTo(screenX - halfW, screenY)
+    ctx.closePath()
+    ctx.fillStyle   = '#0a0f1f'
+    ctx.strokeStyle = CUBE_STROKE
+    ctx.lineWidth   = 1
+    ctx.fill()
+    ctx.stroke()
+    return
+  }
+  // Case normale (damier subtil)
   ctx.beginPath()
   ctx.moveTo(screenX,         screenY - halfH)
   ctx.lineTo(screenX + halfW, screenY)
   ctx.lineTo(screenX,         screenY + halfH)
   ctx.lineTo(screenX - halfW, screenY)
   ctx.closePath()
-
-  ctx.fillStyle   = cell.walkable ? COLOR_WALKABLE : COLOR_BLOCKED
-  ctx.strokeStyle = cell.walkable ? COLOR_STROKE   : COLOR_STROKE_DARK
+  ctx.fillStyle   = alt ? COLOR_CELL_ALT : COLOR_CELL
+  ctx.strokeStyle = COLOR_GRID
   ctx.lineWidth   = 1
   ctx.fill()
   ctx.stroke()
+}
+
+/** Trou : case entièrement noire, sans bordure visible. */
+function drawHole(ctx: CanvasRenderingContext2D, sx: number, sy: number): void {
+  const halfW = TILE_WIDTH  / 2
+  const halfH = TILE_HEIGHT / 2
+
+  ctx.beginPath()
+  ctx.moveTo(sx,         sy - halfH)
+  ctx.lineTo(sx + halfW, sy)
+  ctx.lineTo(sx,         sy + halfH)
+  ctx.lineTo(sx - halfW, sy)
+  ctx.closePath()
+  ctx.fillStyle   = '#000000'
+  ctx.strokeStyle = '#000000'
+  ctx.lineWidth   = 1
+  ctx.fill()
+  ctx.stroke()
+}
+
+/** Cube isométrique 3 faces avec rune décorative sur la face du dessus. */
+function drawCube(ctx: CanvasRenderingContext2D, sx: number, sy: number): void {
+  const halfW = TILE_WIDTH  / 2
+  const halfH = TILE_HEIGHT / 2
+  const ch    = CUBE_H  // hauteur visible des faces latérales
+
+  // ── Face gauche ───────────────────────────────────────────────────────────
+  ctx.beginPath()
+  ctx.moveTo(sx - halfW, sy - ch)
+  ctx.lineTo(sx - halfW, sy)
+  ctx.lineTo(sx,         sy + halfH)
+  ctx.lineTo(sx,         sy + halfH - ch)
+  ctx.closePath()
+  ctx.fillStyle   = CUBE_LEFT
+  ctx.strokeStyle = CUBE_STROKE
+  ctx.lineWidth   = 1.2
+  ctx.fill()
+  ctx.stroke()
+
+  // ── Face droite ───────────────────────────────────────────────────────────
+  ctx.beginPath()
+  ctx.moveTo(sx + halfW, sy - ch)
+  ctx.lineTo(sx + halfW, sy)
+  ctx.lineTo(sx,         sy + halfH)
+  ctx.lineTo(sx,         sy + halfH - ch)
+  ctx.closePath()
+  ctx.fillStyle   = CUBE_RIGHT
+  ctx.strokeStyle = CUBE_STROKE
+  ctx.fill()
+  ctx.stroke()
+
+  // ── Face du dessus ────────────────────────────────────────────────────────
+  ctx.beginPath()
+  ctx.moveTo(sx,         sy - halfH - ch)
+  ctx.lineTo(sx + halfW, sy - ch)
+  ctx.lineTo(sx,         sy + halfH - ch)
+  ctx.lineTo(sx - halfW, sy - ch)
+  ctx.closePath()
+  ctx.fillStyle   = CUBE_TOP
+  ctx.strokeStyle = CUBE_STROKE
+  ctx.fill()
+  ctx.stroke()
+
 }
 
 function drawEntityCircle(
