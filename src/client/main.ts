@@ -479,21 +479,22 @@ function makePortraitCard(entity: Entity, isActive: boolean): string {
  * Appelé à chaque render() — idempotent, rapide (lecture/écriture DOM minimale).
  */
 function updateHudDOM(): void {
-  const entity      = currentEntity()
+  const entity       = currentEntity()
+  const playerEntity = gameState.entities.find(e => e.team === 'player') ?? entity
   const gameOver    = gameState.status !== 'ongoing'
   const allDisabled = aiTurnActive || gameOver
 
-  // Valeurs PA / PM dans la barre de sorts
-  if (hudApVal) hudApVal.textContent = String(entity.ap)
-  if (hudMpVal) hudMpVal.textContent = String(entity.mp)
+  // Valeurs PA / PM dans la barre de sorts (toujours celles du joueur)
+  if (hudApVal) hudApVal.textContent = String(playerEntity.ap)
+  if (hudMpVal) hudMpVal.textContent = String(playerEntity.mp)
 
   // Boutons de sort
   for (const btn of hudSpellButtons) {
     const spellId  = btn.dataset['spellId']!
     const spell    = getSpell(spellId)
-    const cd       = entity.cooldowns?.[spellId] ?? 0
+    const cd       = playerEntity.cooldowns?.[spellId] ?? 0
     const onCd     = cd > 0
-    const noAp     = !allDisabled && !onCd && spell !== undefined && entity.ap < spell.apCost
+    const noAp     = !allDisabled && !onCd && spell !== undefined && playerEntity.ap < spell.apCost
     const isActive = !allDisabled && !onCd && mode === 'spell' && activeSpellId === spellId
 
     const costEl = btn.querySelector<HTMLElement>('.spell-cost')
@@ -512,6 +513,7 @@ function updateHudDOM(): void {
 
   // Bouton Fin de tour
   if (hudEndTurnBtn) hudEndTurnBtn.disabled = allDisabled
+
 
   // Hint contextuel
 
