@@ -525,8 +525,9 @@ function updateHudDOM(): void {
     const isEnemy = entity.team === 'enemy'
     hudActiveActor.className = `active-actor ${isEnemy ? 'is-enemy' : 'is-player'}`
     const hpPct = Math.round((entity.hp / entity.maxHp) * 100)
+    const aaSprite = entity.team === 'player' ? 'player' : (entity.creatureType ?? 'sanglier')
     hudActiveActor.innerHTML = `
-      <div class="aa-hex"><span class="aa-glyph">${entity.name.charAt(0).toUpperCase()}</span></div>
+      <div class="aa-hex"><img class="aa-sprite" src="/sprites/${aaSprite}_se.png" alt=""></div>
       <div class="aa-info">
         <div class="aa-label">${isEnemy ? 'ENNEMI' : 'À VOUS DE JOUER'}</div>
         <div class="aa-name">${entity.name}</div>
@@ -539,11 +540,15 @@ function updateHudDOM(): void {
 
   // Timeline d'initiative (tokens à venir, hors acteur courant)
   if (hudTimelineEl) {
-    const turns = getUpcomingTurns(gameState, 9).slice(1)
+    const aliveCount = gameState.entities.filter(e => e.hp > 0).length
+    const turns = getUpcomingTurns(gameState, aliveCount).slice(1)
     hudTimelineEl.innerHTML = turns.map(e => {
       const cls = `turn-token ${e.team === 'player' ? 'is-player' : 'is-enemy'}`
+      const spritePrefix = e.team === 'player' ? 'player' : (e.creatureType ?? 'sanglier')
+      const hpPct = Math.round((e.hp / e.maxHp) * 100)
       return `<div class="${cls}">
-        <span class="tt-label">${e.name.charAt(0).toUpperCase()}</span>
+        <img class="tt-sprite" src="/sprites/${spritePrefix}_se.png" alt="">
+        <div class="tt-hpbar"><div class="tt-hpbar-fill" style="width:${hpPct}%"></div></div>
         <span class="tt-name">${e.name}</span>
       </div>`
     }).join('')

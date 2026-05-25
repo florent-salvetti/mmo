@@ -181,13 +181,36 @@ h1, h2, h3, .display { font-family: "Cinzel", serif; font-weight: 600; letter-sp
   cursor: default;
   margin-bottom: 14px; /* room for name label below */
 }
-.turn-token .tt-label {
-  font-family: "Cinzel", serif;
-  font-weight: 700;
-  font-size: 15px;
-  text-shadow: 0 0 6px currentColor;
+.turn-token .tt-label { display: none; }
+.turn-token .tt-hp   { display: none; }
+
+.tt-sprite {
+  position: absolute;
+  width: 130%;
+  height: 130%;
+  top: -18%;
+  left: -15%;
+  object-fit: contain;
+  object-position: center top;
+  pointer-events: none;
 }
-.turn-token .tt-hp { display: none; }
+
+.tt-hpbar {
+  position: absolute;
+  bottom: 5px;
+  left: 22%;
+  width: 56%;
+  height: 3px;
+  background: rgba(0, 0, 0, 0.55);
+  border-radius: 2px;
+  z-index: 2;
+}
+.tt-hpbar-fill {
+  height: 100%;
+  background: var(--hp);
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
 .turn-token.is-player { color: var(--primary); }
 .turn-token.is-enemy  { color: var(--danger); }
 .turn-token.is-ally   { color: var(--secondary); }
@@ -385,12 +408,20 @@ h1, h2, h3, .display { font-family: "Cinzel", serif; font-weight: 600; letter-sp
   clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%);
   display: flex; align-items: center; justify-content: center;
   filter: drop-shadow(0 0 8px currentColor);
+  position: relative;
+  overflow: hidden;
 }
-.aa-glyph {
-  font-family: "Cinzel", serif; font-weight: 700;
-  font-size: 22px;
-  color: currentColor;
-  text-shadow: 0 0 8px currentColor;
+.aa-glyph { display: none; }
+
+.aa-sprite {
+  width: 130%;
+  height: 130%;
+  object-fit: contain;
+  object-position: center top;
+  position: absolute;
+  top: -18%;
+  left: -15%;
+  pointer-events: none;
 }
 .aa-info {
   min-width: 120px;
