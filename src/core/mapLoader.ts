@@ -1,11 +1,12 @@
 import type { Cell, Entity, GameState, MapDefinition } from '../shared/types'
 
 /**
- * Construit le GameState initial à partir d'une définition de map.
+ * Construit le GameState initial (exploration) à partir d'une définition de map.
+ * Ne crée que le joueur — les monstres des groupes ne rejoignent le GameState
+ * que lorsqu'un combat est déclenché (future fonction createCombatStateFromGroup).
  * Fonction pure : même entrée → même sortie, aucun effet de bord.
  */
 export function createGameStateFromMap(map: MapDefinition): GameState {
-  // Index rapide des obstacles pour la construction de la grille.
   const obstacleIndex = new Map(
     map.obstacles.map(o => [`${o.x},${o.y}`, o.type] as const),
   )
@@ -31,23 +32,9 @@ export function createGameStateFromMap(map: MapDefinition): GameState {
     maxMp:    p.maxMp,
   }
 
-  const enemies: Entity[] = map.enemies.map(e => ({
-    id:           e.id,
-    name:         e.name,
-    team:         'enemy' as const,
-    creatureType: e.creatureType,
-    position:     { x: e.startPosition.x, y: e.startPosition.y },
-    hp:           e.hp,
-    maxHp:        e.maxHp,
-    ap:           e.ap,
-    maxAp:        e.maxAp,
-    mp:           e.mp,
-    maxMp:        e.maxMp,
-  }))
-
   return {
     grid,
-    entities:        [player, ...enemies],
+    entities:        [player],
     currentEntityId: player.id,
     turn:            1,
     status:          'ongoing',

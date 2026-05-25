@@ -21,13 +21,18 @@ const testDef: MapDefinition = {
     ap: 6,   maxAp: 6,
     mp: 3,   maxMp: 3,
   },
-  enemies: [
+  monsterGroups: [
     {
-      id: 'e1', name: 'Goblin', creatureType: 'goblin',
-      startPosition: { x: 4, y: 3 },
-      hp: 30, maxHp: 30,
-      ap: 4,  maxAp: 4,
-      mp: 2,  maxMp: 2,
+      id: 'grp-test',
+      monsters: [
+        {
+          id: 'e1', name: 'Goblin', creatureType: 'goblin',
+          position: { x: 4, y: 3 },
+          hp: 30, maxHp: 30,
+          ap: 4,  maxAp: 4,
+          mp: 2,  maxMp: 2,
+        },
+      ],
     },
   ],
 }
@@ -78,18 +83,15 @@ describe('createGameStateFromMap — entités', () => {
     expect(player.mp).toBe(3)
   })
 
-  it('crée les ennemis avec la bonne position et les bons stats', () => {
+  it('le joueur est la première et unique entité dans entities', () => {
     const state = createGameStateFromMap(testDef)
-    const enemy = state.entities.find(e => e.team === 'enemy')!
-    expect(enemy.id).toBe('e1')
-    expect(enemy.creatureType).toBe('goblin')
-    expect(enemy.position).toEqual({ x: 4, y: 3 })
-    expect(enemy.hp).toBe(30)
+    expect(state.entities).toHaveLength(1)
+    expect(state.entities[0].team).toBe('player')
   })
 
-  it('le joueur est en premier dans la liste des entités', () => {
+  it('aucun ennemi dans entities — les groupes ne peuplent pas le GameState', () => {
     const state = createGameStateFromMap(testDef)
-    expect(state.entities[0].team).toBe('player')
+    expect(state.entities.filter(e => e.team === 'enemy')).toHaveLength(0)
   })
 })
 
@@ -125,13 +127,12 @@ describe('createGameStateFromMap — combat-01 (données réelles)', () => {
     expect(kirito.hp).toBe(100)
   })
 
-  it('crée Sanglier A à (4,1) et Sanglier B à (5,7)', () => {
-    const state = createGameStateFromMap(combat01)
-    const a = state.entities.find(e => e.id === 'enemy-1')!
-    const b = state.entities.find(e => e.id === 'enemy-2')!
-    expect(a.position).toEqual({ x: 4, y: 1 })
-    expect(b.position).toEqual({ x: 5, y: 7 })
-    expect(a.creatureType).toBe('sanglier')
+  it('expose 2 groupes de monstres dans la map', () => {
+    expect(combat01.monsterGroups).toHaveLength(2)
+    const groupA = combat01.monsterGroups.find(g => g.id === 'grp-01-A')!
+    expect(groupA.monsters).toHaveLength(3)
+    expect(groupA.monsters[0].creatureType).toBe('sanglier')
+    expect(groupA.monsters[0].position).toEqual({ x: 7, y: 1 })
   })
 
   it('démarre avec Kirito comme entité courante', () => {

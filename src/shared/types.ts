@@ -119,20 +119,6 @@ export type PlayerEntry = {
   maxMp: number
 }
 
-/** Données de départ d'un ennemi dans une définition de map. */
-export type EnemyEntry = {
-  id: string
-  name: string
-  creatureType: string
-  startPosition: { x: number; y: number }
-  hp: number
-  maxHp: number
-  ap: number
-  maxAp: number
-  mp: number
-  maxMp: number
-}
-
 /** Maps adjacentes accessibles depuis cette map (exploration). Absent = bord infranchissable. */
 export type MapNeighbors = {
   nord?: string
@@ -141,9 +127,33 @@ export type MapNeighbors = {
   ouest?: string
 }
 
+/** Un monstre appartenant à un groupe sur la map d'exploration. */
+export type MonsterEntry = {
+  id: string
+  name: string
+  creatureType: string
+  /** Position sur la map d'exploration (= position de départ si combat déclenché). */
+  position: { x: number; y: number }
+  hp: number
+  maxHp: number
+  ap: number
+  maxAp: number
+  mp: number
+  maxMp: number
+}
+
 /**
- * Structure de données décrivant un combat chargeable depuis un fichier.
- * Changer les données change le combat — sans toucher au code.
+ * Un groupe de monstres sur la map d'exploration.
+ * Cliquer un membre du groupe engagera le combat avec TOUT le groupe (brique suivante).
+ */
+export type MonsterGroup = {
+  id: string
+  monsters: MonsterEntry[]
+}
+
+/**
+ * Structure de données décrivant une map chargeable depuis un fichier.
+ * Changer les données change la map — sans toucher au code.
  */
 export type MapDefinition = {
   id: string
@@ -151,7 +161,12 @@ export type MapDefinition = {
   height: number
   obstacles: ObstacleEntry[]
   player: PlayerEntry
-  enemies: EnemyEntry[]
+  /**
+   * Groupes de monstres visibles en exploration.
+   * Remplace l'ancien champ `enemies` (combat-only, supprimé).
+   * Quand un groupe est engagé, ses monsters alimenteront le GameState de combat.
+   */
+  monsterGroups: MonsterGroup[]
   /** Voisinage optionnel — utilisé en exploration pour les transitions. */
   neighbors?: MapNeighbors
 }

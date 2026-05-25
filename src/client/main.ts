@@ -159,8 +159,9 @@ function directionFromPath(path: Position[]): PlayerDirection {
   return directionTo(path[path.length - 2]!, path[path.length - 1]!)
 }
 
-/** Bascule le mode de jeu. En exploration : coupe le combat. En combat : relance le tour. */
-function setGameMode(newMode: GameMode): void {
+/** Bascule le mode de jeu. En exploration : coupe le combat. En combat : relance le tour.
+ *  Exportée : sera appelée par le déclenchement de combat (brique suivante). */
+export function setGameMode(newMode: GameMode): void {
   if (gameMode === newMode) return
   gameMode = newMode
   if (newMode === 'exploration') {
@@ -584,13 +585,40 @@ function updateHudDOM(): void {
   }
 }
 
-/** Remplace la position des entités animées par leur position visuelle interpolée. */
+/**
+ * Construit la liste des monstres de groupes en tant qu'entités visuelles statiques.
+ * Utilisé en exploration pour les afficher sur la map sans les mettre dans le GameState.
+ */
+function getGroupMonsterEntities(): Entity[] {
+  return currentMapDef.monsterGroups.flatMap(g =>
+    g.monsters.map(m => ({
+      id:           m.id,
+      name:         m.name,
+      team:         'enemy' as const,
+      creatureType: m.creatureType,
+      position:     m.position,
+      hp:           m.hp,
+      maxHp:        m.maxHp,
+      ap:           m.ap,
+      maxAp:        m.maxAp,
+      mp:           m.mp,
+      maxMp:        m.maxMp,
+    })),
+  )
+}
+
+/** Remplace la position des entités animées par leur position visuelle interpolée.
+ *  En exploration, ajoute aussi les monstres des groupes (statiques, hors GameState). */
 function getVisualEntities(): Entity[] {
   const now = performance.now()
-  return gameState.entities.map(e => {
+  const stateEntities = gameState.entities.map(e => {
     const vp = getVisualPosition(e.id, now)
     return vp ? { ...e, position: vp } : e
   })
+  if (gameMode === 'exploration') {
+    return [...stateEntities, ...getGroupMonsterEntities()]
+  }
+  return stateEntities
 }
 
 /**
@@ -981,8 +1009,9 @@ mobileBackdrop?.addEventListener('click', () => {
 /**
  * Remplace le combat en cours par celui décrit dans `def`.
  * Réinitialise toute l'UI et le rendu proprement.
+ * Exportée : sera appelée quand un groupe de monstres est engagé (brique suivante).
  */
-function loadMap(def: MapDefinition): void {
+export function loadMap(def: MapDefinition): void {
   // Arrêter ce qui est en cours
   stopTimer()
   if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null }
