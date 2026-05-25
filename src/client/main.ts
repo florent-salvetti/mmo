@@ -92,13 +92,15 @@ const rightPanel      = document.querySelector<HTMLElement>('.side-panel.right')
 // État de l'UI
 // ---------------------------------------------------------------------------
 
-type UIMode = 'move' | 'spell'
+type UIMode    = 'move' | 'spell'
+type GameMode  = 'combat' | 'exploration'
 
 const SPELL_COUP_EPEE  = 'coup-epee'
 const SPELL_TIR_ARC    = 'tir-arc'
 const SPELL_CHARGE     = 'charge'
 const AI_STEP_DELAY_MS = 500  // pause entre chaque action IA (visible à l'écran)
 
+let gameMode:      GameMode = 'combat'
 let mode:          UIMode  = 'move'
 let activeSpellId: string  = SPELL_COUP_EPEE  // sort actif quand mode === 'spell'
 let hoveredPos:    Position | null = null
@@ -147,6 +149,12 @@ function directionTo(from: Position, to: Position): PlayerDirection {
 function directionFromPath(path: Position[]): PlayerDirection {
   if (path.length < 2) return 'SE'
   return directionTo(path[path.length - 2]!, path[path.length - 1]!)
+}
+
+/** Bascule le mode de jeu et déclenche un rendu. */
+function setGameMode(newMode: GameMode): void {
+  gameMode = newMode
+  render()
 }
 
 /**
@@ -589,6 +597,23 @@ function animationLoop(now: number): void {
   }
 }
 
+/** Affiche le mode de jeu courant en bas à gauche du canvas. */
+function renderModeIndicator(): void {
+  const logW = cssW / gridScale
+  const logH = cssH / gridScale
+  const label = gameMode === 'combat' ? 'MODE: combat' : 'MODE: exploration'
+  const color = gameMode === 'combat' ? '#ff6666' : '#66ccff'
+  ctx.font         = 'bold 13px monospace'
+  ctx.textAlign    = 'left'
+  ctx.textBaseline = 'bottom'
+  ctx.fillStyle    = 'rgba(0,0,0,0.55)'
+  ctx.fillRect(8, logH - 28, 175, 22)
+  ctx.fillStyle = color
+  ctx.fillText(label, 14, logH - 9)
+  ctx.textAlign    = 'left'
+  ctx.textBaseline = 'top'
+}
+
 function render(): void {
   // Applique l'échelle DPR : tout ce qui est dessiné ensuite utilise des coordonnées
   // CSS (pixels logiques), quel que soit le devicePixelRatio.
@@ -600,12 +625,12 @@ function render(): void {
 
   renderGrid(ctx, gameState.grid, origin)
 
-  // Les surlignages ne s'affichent que pendant le tour du joueur.
+  // [MODE COMBAT] Les surlignages ne s'affichent qu'en mode combat et pendant le tour du joueur.
   if (!aiTurnActive) {
     if (mode === 'move') {
-      renderHighlights(ctx, reachable, origin, hoveredPos)
+      renderHighlights(ctx, reachable, origin, hoveredPos)  // [MODE COMBAT]
     } else {
-      renderSpellRange(ctx, spellRange, origin, hoveredPos)
+      renderSpellRange(ctx, spellRange, origin, hoveredPos)  // [MODE COMBAT]
     }
   }
 
@@ -621,9 +646,10 @@ function render(): void {
   const visualEntities    = getVisualEntities()
   const flashingEntities  = getFlashingEntities(now)
   renderCubesAndEntities(ctx, gameState.grid, visualEntities, origin, entityDirections, flashingEntities)
-  renderDamageNumbers(ctx, getActiveDamageNumbers(now), visualEntities, origin)
+  renderDamageNumbers(ctx, getActiveDamageNumbers(now), visualEntities, origin)  // [MODE COMBAT]
+  renderModeIndicator()
   renderOverlay()
-  updateHudDOM()
+  updateHudDOM()  // [MODE COMBAT]
 }
 
 function renderOverlay(): void {
@@ -702,8 +728,8 @@ function doEndTurn(): void {
   const nextCls = next.team === 'enemy' ? 'target' : 'actor'
   pushLog(`<span class="${nextCls}">${next.name}</span> commence son tour.`, 'system')
   render()
-  if (isCurrentEntityEnemy()) startAITurn()
-  else startTurnTimer()
+  if (isCurrentEntityEnemy()) startAITurn()    // [MODE COMBAT]
+  else startTurnTimer()                        // [MODE COMBAT]
 }
 
 // ---------------------------------------------------------------------------
@@ -756,7 +782,7 @@ canvas.addEventListener('click', (e) => {
         .filter(e => e.id !== entityId && e.hp > 0)
         .map(e => `${e.position.x},${e.position.y}`),
     )
-    gameState = applyAction(gameState, { type: 'MOVE', entityId, to: pos })
+    gameState = applyAction(gameState, { type: 'MOVE', entityId, to: pos })  // [MODE COMBAT]
     if (gameState === prevState) return  // déplacement refusé par le core : on ne fait rien
     if (gameState.status !== 'ongoing') stopTimer()
     refreshReachable()
@@ -769,7 +795,7 @@ canvas.addEventListener('click', (e) => {
     // Mode sort : envoyer USE_SPELL. Si l'état a changé, le sort a été appliqué.
     const entityId  = gameState.currentEntityId
     const prevState = gameState
-    gameState = applyAction(gameState, {
+    gameState = applyAction(gameState, {  // [MODE COMBAT]
       type: 'USE_SPELL', entityId, spellId: activeSpellId, target: pos,
     })
     if (gameState !== prevState) {
@@ -822,9 +848,10 @@ hudEndTurnBtn?.addEventListener('click', () => doEndTurn())
 document.addEventListener('keydown', (e) => {
   if (e.repeat) return
   switch (e.key.toUpperCase()) {
-    case 'A': selectSpell(SPELL_COUP_EPEE); break
-    case 'Z': selectSpell(SPELL_TIR_ARC);  break
-    case 'E': selectSpell(SPELL_CHARGE);   break
+    case 'A': selectSpell(SPELL_COUP_EPEE);      break
+    case 'Z': selectSpell(SPELL_TIR_ARC);        break
+    case 'E': setGameMode('exploration');         break
+    case 'C': setGameMode('combat');             break
     case 'F':
     case ' ':
       e.preventDefault()
@@ -887,6 +914,7 @@ function loadMap(def: MapDefinition): void {
   gameState = createGameStateFromMap(def)
 
   // Réinitialiser l'UI
+  gameMode      = 'combat'
   mode          = 'move'
   activeSpellId = SPELL_COUP_EPEE
   hoveredPos    = null
