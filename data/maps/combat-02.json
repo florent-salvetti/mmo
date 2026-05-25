@@ -27,35 +27,42 @@
   "monsterGroups": [
     {
       "id": "grp-02-A",
+      "playerStartPositions": [{"x":1,"y":1},{"x":2,"y":1},{"x":1,"y":2}],
       "monsters": [
         {
           "id": "grp-02-A-1", "name": "Sanglier A", "creatureType": "sanglier",
           "position": { "x": 7, "y": 1 },
+          "combatPosition": { "x": 8, "y": 1 },
           "hp": 40, "maxHp": 40, "ap": 6, "maxAp": 6, "mp": 2, "maxMp": 2
         },
         {
           "id": "grp-02-A-2", "name": "Sanglier B", "creatureType": "sanglier",
           "position": { "x": 8, "y": 1 },
+          "combatPosition": { "x": 8, "y": 2 },
           "hp": 40, "maxHp": 40, "ap": 6, "maxAp": 6, "mp": 2, "maxMp": 2
         }
       ]
     },
     {
       "id": "grp-02-B",
+      "playerStartPositions": [{"x":1,"y":7},{"x":1,"y":8},{"x":2,"y":7}],
       "monsters": [
         {
           "id": "grp-02-B-1", "name": "Sanglier C", "creatureType": "sanglier",
           "position": { "x": 3, "y": 7 },
+          "combatPosition": { "x": 8, "y": 7 },
           "hp": 35, "maxHp": 35, "ap": 5, "maxAp": 5, "mp": 3, "maxMp": 3
         },
         {
           "id": "grp-02-B-2", "name": "Sanglier D", "creatureType": "sanglier",
           "position": { "x": 4, "y": 7 },
+          "combatPosition": { "x": 9, "y": 7 },
           "hp": 40, "maxHp": 40, "ap": 6, "maxAp": 6, "mp": 2, "maxMp": 2
         },
         {
           "id": "grp-02-B-3", "name": "Sanglier E", "creatureType": "sanglier",
           "position": { "x": 3, "y": 8 },
+          "combatPosition": { "x": 8, "y": 8 },
           "hp": 35, "maxHp": 35, "ap": 5, "maxAp": 5, "mp": 3, "maxMp": 3
         }
       ]

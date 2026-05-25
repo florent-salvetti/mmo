@@ -132,8 +132,13 @@ export type MonsterEntry = {
   id: string
   name: string
   creatureType: string
-  /** Position sur la map d'exploration (= position de départ si combat déclenché). */
+  /** Position sur la map d'exploration (sprite visible en dehors des combats). */
   position: { x: number; y: number }
+  /**
+   * Position de départ EN COMBAT.
+   * Si absent, `position` est réutilisée comme fallback.
+   */
+  combatPosition?: { x: number; y: number }
   hp: number
   maxHp: number
   ap: number
@@ -144,11 +149,14 @@ export type MonsterEntry = {
 
 /**
  * Un groupe de monstres sur la map d'exploration.
- * Cliquer un membre du groupe engagera le combat avec TOUT le groupe (brique suivante).
+ * Cliquer un membre du groupe engagera le combat avec TOUT le groupe.
+ * playerStartPositions : 3 cases de départ possibles pour le joueur au lancement du combat.
+ * L'une d'elles est choisie aléatoirement côté client (randomness hors du core pur).
  */
 export type MonsterGroup = {
   id: string
   monsters: MonsterEntry[]
+  playerStartPositions?: [Position, Position, Position]
 }
 
 /**

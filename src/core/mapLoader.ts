@@ -1,4 +1,4 @@
-import type { Cell, Entity, GameState, MapDefinition, MonsterGroup } from '../shared/types'
+import type { Cell, Entity, GameState, MapDefinition, MonsterGroup, Position } from '../shared/types'
 
 /**
  * Construit le GameState initial (exploration) à partir d'une définition de map.
@@ -43,7 +43,9 @@ export function createGameStateFromMap(map: MapDefinition): GameState {
 
 /**
  * Construit le GameState de COMBAT à partir d'une map et d'un groupe de monstres engagé.
- * Le joueur est placé à sa position d'exploration courante (pas la startPosition de la map).
+ * - playerCombatPos : position de départ du joueur sur la grille de combat.
+ *   Si absent, player.position est utilisée.
+ * - Les monstres sont placés à leur combatPosition (si définie) ou à leur position d'exploration.
  * Ses PA et PM sont restaurés au maximum (début de combat).
  * Fonction pure : même entrée → même sortie, aucun effet de bord.
  */
@@ -51,6 +53,7 @@ export function createCombatStateFromGroup(
   map: MapDefinition,
   group: MonsterGroup,
   player: Entity,
+  playerCombatPos?: Position,
 ): GameState {
   const obstacleIndex = new Map(
     map.obstacles.map(o => [`${o.x},${o.y}`, o.type] as const),
@@ -63,11 +66,12 @@ export function createCombatStateFromGroup(
     }),
   )
 
+  const startPos = playerCombatPos ?? player.position
   const playerEntity: Entity = {
     id:       player.id,
     name:     player.name,
     team:     'player',
-    position: { x: player.position.x, y: player.position.y },
+    position: { x: startPos.x, y: startPos.y },
     hp:       player.hp,
     maxHp:    player.maxHp,
     ap:       player.maxAp,
@@ -76,19 +80,22 @@ export function createCombatStateFromGroup(
     maxMp:    player.maxMp,
   }
 
-  const enemies: Entity[] = group.monsters.map(m => ({
-    id:           m.id,
-    name:         m.name,
-    team:         'enemy' as const,
-    creatureType: m.creatureType,
-    position:     { x: m.position.x, y: m.position.y },
-    hp:           m.hp,
-    maxHp:        m.maxHp,
-    ap:           m.ap,
-    maxAp:        m.maxAp,
-    mp:           m.mp,
-    maxMp:        m.maxMp,
-  }))
+  const enemies: Entity[] = group.monsters.map(m => {
+    const pos = m.combatPosition ?? m.position
+    return {
+      id:           m.id,
+      name:         m.name,
+      team:         'enemy' as const,
+      creatureType: m.creatureType,
+      position:     { x: pos.x, y: pos.y },
+      hp:           m.hp,
+      maxHp:        m.maxHp,
+      ap:           m.ap,
+      maxAp:        m.maxAp,
+      mp:           m.mp,
+      maxMp:        m.maxMp,
+    }
+  })
 
   return {
     grid,

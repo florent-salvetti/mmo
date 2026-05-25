@@ -51,6 +51,59 @@ function loadSprite(src: string): Promise<void> {
   })
 }
 
+// ─── Spritesheets Knight ──────────────────────────────────────────────────────
+
+/** Coordonnées d'une frame dans une spritesheet. */
+type FrameRect = { x: number; y: number; w: number; h: number }
+
+/** Entrée du cache spritesheet : image chargée + liste des frames découpées. */
+type SpritesheetEntry = { image: HTMLImageElement; frames: FrameRect[] }
+
+/** Cache spritesheet : chemin PNG → { image, frames[] }. */
+const loadedSheets = new Map<string, SpritesheetEntry>()
+
+/** Format minimal du JSON PixelOver dont on a besoin. */
+type PixelOverJSON = { frames: Array<{ frame: { x: number; y: number; w: number; h: number } }> }
+
+/**
+ * Charge une spritesheet PNG + son JSON PixelOver associé et les met en cache.
+ * Guard fetch/Image : retourne immédiatement en environnement test (Node).
+ */
+async function loadSpritesheet(pngSrc: string, jsonSrc: string): Promise<void> {
+  if (typeof fetch === 'undefined') return
+  if (typeof Image === 'undefined') return
+  try {
+    const json = await fetch(jsonSrc).then(r => r.json()) as PixelOverJSON
+    const frames: FrameRect[] = json.frames.map(f => ({ ...f.frame }))
+    await new Promise<void>(resolve => {
+      const img = new Image()
+      img.onload  = () => { loadedSheets.set(pngSrc, { image: img, frames }); resolve() }
+      img.onerror = () => resolve()
+      img.src     = pngSrc
+    })
+  } catch {
+    // réseau ou JSON invalide → fallback silencieux (cercle puis sprite statique)
+  }
+}
+
+// Spritesheet utilisée pour le joueur — étape 1 : Idle dir1 uniquement.
+const KNIGHT_IDLE_PNG  = '/sprites/KnightBasic/Idle/Knight_Idle_dir1.png'
+const KNIGHT_IDLE_JSON = '/sprites/KnightBasic/Idle/Knight_Idle_dir1.json'
+
+/**
+ * Taille d'affichage des frames Knight (frames carrées 256×256).
+ * Le personnage occupe ~25–30 % de la frame → ajuster ici si trop grand/petit.
+ */
+const KNIGHT_DISPLAY_W = 160
+/**
+ * Position des pieds dans la frame source, exprimée en fraction de la hauteur totale.
+ * Les frames Knight ont beaucoup de blanc sous les pieds (~40 %).
+ * Ajuster entre 0.5 et 0.7 pour aligner les pieds avec le sol isométrique.
+ */
+const KNIGHT_FEET_RATIO = 0.50
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 /** Chemin du sprite directionnel : /sprites/sanglier_ne.png, /sprites/player_so.png, etc. */
 function spritePath(prefix: string, dir: PlayerDirection): string {
   return `/sprites/${prefix}_${dir.toLowerCase()}.png`
@@ -65,12 +118,13 @@ function fallbackSpritePath(prefix: string): string {
  * Promesse résolue quand tous les sprites sont chargés (ou ont échoué).
  * Attendre cette promesse avant le premier render() évite le flash du cercle de fallback.
  */
-export const spritesReady: Promise<void> = Promise.all(
-  KNOWN_CREATURE_PREFIXES.flatMap(prefix => [
+export const spritesReady: Promise<void> = Promise.all([
+  ...KNOWN_CREATURE_PREFIXES.flatMap(prefix => [
     loadSprite(fallbackSpritePath(prefix)),
     ...DIRECTIONS.map(dir => loadSprite(spritePath(prefix, dir))),
   ]),
-).then(() => undefined)
+  loadSpritesheet(KNIGHT_IDLE_PNG, KNIGHT_IDLE_JSON),
+]).then(() => undefined)
 
 /**
  * Retourne le sprite à afficher pour un préfixe et une direction.
@@ -167,29 +221,56 @@ function drawEntity(
   flashingEntities: Map<string, number>,
 ): void {
   const { screenX, screenY } = gridToScreen(entity.position, origin)
-  const dir    = directions.get(entity.id) ?? 'SE'
-  const prefix = entity.team === 'player' ? 'player' : (entity.creatureType ?? null)
+  const dir = directions.get(entity.id) ?? 'SE'
   let hpBarY: number
 
-  const spriteW = entity.team === 'player' ? PLAYER_SPRITE_W   : ENEMY_SPRITE_W
-  const yOffset = entity.team === 'player' ? PLAYER_SPRITE_Y_OFFSET : ENEMY_SPRITE_Y_OFFSET
-
-  if (prefix !== null) {
-    const sprite = getSprite(prefix, dir)
-    if (sprite) {
-      const spriteH = spriteW * sprite.naturalHeight / sprite.naturalWidth
-      const spriteY = screenY - spriteH + yOffset
-      ctx.drawImage(sprite, screenX - spriteW / 2, spriteY, spriteW, spriteH)
+  if (entity.team === 'player') {
+    // ── Joueur : spritesheet Knight (frame 0 Idle) ──────────────────────────
+    const sheet = loadedSheets.get(KNIGHT_IDLE_PNG)
+    if (sheet && sheet.frames.length > 0) {
+      const frame   = sheet.frames[0]!
+      const dw      = KNIGHT_DISPLAY_W
+      // Ancre les pieds (à KNIGHT_FEET_RATIO de la hauteur de frame) sur le point-sol (screenY)
+      const spriteY = screenY - dw * KNIGHT_FEET_RATIO
+      ctx.drawImage(sheet.image, frame.x, frame.y, frame.w, frame.h,
+        screenX - dw / 2, spriteY, dw, dw)
       hpBarY = spriteY - 4
     } else {
-      const cy = screenY + yOffset
-      drawEntityCircle(ctx, screenX, cy, entity.team)
-      hpBarY = cy - 10 - 6
+      // Fallback : sprite statique Kirito ou cercle
+      const sprite = getSprite('player', dir)
+      if (sprite) {
+        const spriteH = PLAYER_SPRITE_W * sprite.naturalHeight / sprite.naturalWidth
+        const spriteY = screenY - spriteH + PLAYER_SPRITE_Y_OFFSET
+        ctx.drawImage(sprite, screenX - PLAYER_SPRITE_W / 2, spriteY, PLAYER_SPRITE_W, spriteH)
+        hpBarY = spriteY - 4
+      } else {
+        const cy = screenY + PLAYER_SPRITE_Y_OFFSET
+        drawEntityCircle(ctx, screenX, cy, 'player')
+        hpBarY = cy - 10 - 6
+      }
     }
   } else {
-    const cy = screenY + yOffset
-    drawEntityCircle(ctx, screenX, cy, entity.team)
-    hpBarY = cy - 10 - 6
+    // ── Ennemis : sprites statiques existants (sanglier, etc.) ──────────────
+    const prefix  = entity.creatureType ?? null
+    const spriteW = ENEMY_SPRITE_W
+    const yOffset = ENEMY_SPRITE_Y_OFFSET
+    if (prefix !== null) {
+      const sprite = getSprite(prefix, dir)
+      if (sprite) {
+        const spriteH = spriteW * sprite.naturalHeight / sprite.naturalWidth
+        const spriteY = screenY - spriteH + yOffset
+        ctx.drawImage(sprite, screenX - spriteW / 2, spriteY, spriteW, spriteH)
+        hpBarY = spriteY - 4
+      } else {
+        const cy = screenY + yOffset
+        drawEntityCircle(ctx, screenX, cy, 'enemy')
+        hpBarY = cy - 10 - 6
+      }
+    } else {
+      const cy = screenY + yOffset
+      drawEntityCircle(ctx, screenX, cy, 'enemy')
+      hpBarY = cy - 10 - 6
+    }
   }
 
   const ratio  = entity.hp / entity.maxHp
@@ -420,4 +501,40 @@ function drawEntityCircle(
   ctx.lineWidth   = 2
   ctx.fill()
   ctx.stroke()
+}
+
+/**
+ * Renvoie true si le point (clickX, clickY) en espace logique canvas tombe dans le
+ * bounding box du sprite de l'entité. Utilisé pour le hit-test clic en exploration.
+ * Fallback : cercle de rayon spriteW/4 si aucun sprite n'est chargé.
+ */
+export function hitTestEntitySprite(
+  entity: { position: Position; team: 'player' | 'enemy'; creatureType?: string },
+  origin: ScreenPos,
+  clickX: number,
+  clickY: number,
+): boolean {
+  const { screenX, screenY } = gridToScreen(entity.position, origin)
+  const spriteW = entity.team === 'player' ? PLAYER_SPRITE_W   : ENEMY_SPRITE_W
+  const yOffset = entity.team === 'player' ? PLAYER_SPRITE_Y_OFFSET : ENEMY_SPRITE_Y_OFFSET
+  const prefix  = entity.team === 'player' ? 'player' : (entity.creatureType ?? null)
+
+  if (prefix !== null) {
+    let sprite: HTMLImageElement | null = null
+    for (const dir of DIRECTIONS) {
+      const s = getSprite(prefix, dir)
+      if (s) { sprite = s; break }
+    }
+    if (sprite) {
+      const spriteH = spriteW * sprite.naturalHeight / sprite.naturalWidth
+      return (
+        clickX >= screenX - spriteW / 2 &&
+        clickX <= screenX + spriteW / 2 &&
+        clickY >= screenY - spriteH + yOffset &&
+        clickY <= screenY + yOffset
+      )
+    }
+  }
+  // Fallback cercle (sprite absent ou type inconnu)
+  return Math.hypot(clickX - screenX, clickY - (screenY + yOffset)) <= spriteW / 4
 }

@@ -183,8 +183,27 @@
             <span>Fin de tour</span>
           </button>
 
+          <!-- Abandonner -->
+          <button class="abandon-btn" id="abandon-btn" title="Abandonner le combat">
+            <span>Abandonner</span>
+          </button>
+
         </div><!-- /.spellbar -->
       </div><!-- /.spellbar-wrap -->
+
+      <!-- ═══════════════════════════════════════════════════════════
+           CONFIRMATION D'ABANDON
+           ═══════════════════════════════════════════════════════════ -->
+      <div class="abandon-modal" id="abandon-modal">
+        <div class="abandon-panel">
+          <div class="abandon-title">Abandonner le combat ?</div>
+          <div class="abandon-desc">Le groupe de monstres restera sur la carte.</div>
+          <div class="abandon-actions">
+            <button class="abandon-confirm-btn" id="abandon-confirm-btn">Fuir</button>
+            <button class="abandon-cancel-btn"  id="abandon-cancel-btn">Continuer</button>
+          </div>
+        </div>
+      </div>
 
       <!-- ═══════════════════════════════════════════════════════════
            BULLE DE CONFIRMATION DE COMBAT

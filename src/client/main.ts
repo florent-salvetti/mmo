@@ -7,7 +7,7 @@ import { getSpell, getSpellTargetCells } from '../core/spells'
 import { getCell } from '../core/grid'
 import { applyAction } from '../core/reducer'
 import { getAIAction } from '../core/ai'
-import { renderGrid, renderHighlights, renderSpellRange, renderCubesAndEntities, renderDamageNumbers, spritesReady, type PlayerDirection } from './render/gridRenderer'
+import { renderGrid, renderHighlights, renderSpellRange, renderCubesAndEntities, renderDamageNumbers, spritesReady, hitTestEntitySprite, type PlayerDirection } from './render/gridRenderer'
 import { startDamageNumber, startFlash, tickEffects, getActiveDamageNumbers, getFlashingEntities, resetEffects } from './effects'
 import { computeOrigin, gridToScreen, screenToGrid, TILE_WIDTH, TILE_HEIGHT } from './render/projection'
 import { buildPath, startAnimation, tickAnimations, getVisualPosition, getCurrentSegment, resetAnimations } from './animation'
@@ -104,6 +104,10 @@ const summaryContinueEl = document.getElementById('summary-continue-btn') as HTM
 const groupPopupEl      = document.getElementById('group-popup')
 const gpopConfirmEl     = document.getElementById('gpop-confirm') as HTMLButtonElement | null
 const gpopCancelEl      = document.getElementById('gpop-cancel')  as HTMLButtonElement | null
+const hudAbandonBtn     = document.getElementById('abandon-btn')  as HTMLButtonElement | null
+const abandonModalEl    = document.getElementById('abandon-modal')
+const abandonConfirmEl  = document.getElementById('abandon-confirm-btn') as HTMLButtonElement | null
+const abandonCancelEl   = document.getElementById('abandon-cancel-btn')  as HTMLButtonElement | null
 
 // ---------------------------------------------------------------------------
 // État de l'UI
@@ -125,6 +129,8 @@ export let activeGroupId: string | null = null
 let pendingGroup: MonsterGroup | null = null
 /** Vrai pendant l'animation de course vers les monstres — bloque les clics canvas. */
 let combatRunActive = false
+/** Position du joueur en exploration juste avant la course de déclenchement du combat. */
+let preRunPlayerPos: Position | null = null
 /** Vrai entre la détection d'une fin de combat et le retour en exploration (évite les doubles déclenchements). */
 let combatEndScheduled = false
 let mode:          UIMode  = 'move'
@@ -547,6 +553,8 @@ function updateHudDOM(): void {
 
   // Bouton Fin de tour
   if (hudEndTurnBtn) hudEndTurnBtn.disabled = allDisabled
+  // Bouton Abandonner (désactivé pendant le tour ennemi et en fin de combat)
+  if (hudAbandonBtn) hudAbandonBtn.disabled = allDisabled
 
 
   // Hint contextuel
@@ -893,8 +901,8 @@ function returnToExploration(): void {
     activeGroupId = null
   }
 
-  const combatPlayer = gameState.entities.find(e => e.team === 'player')
-  const playerPos    = combatPlayer?.position ?? currentMapDef.player.startPosition
+  const playerPos = preRunPlayerPos ?? currentMapDef.player.startPosition
+  preRunPlayerPos = null
 
   gameMode = 'exploration'
   combatAppEl?.classList.add('mode-exploration')
@@ -908,10 +916,16 @@ function returnToExploration(): void {
 function returnToExplorationDefeated(): void {
   combatEndScheduled = false
   summaryEl?.classList.remove('is-visible')
+  abandonModalEl?.classList.remove('is-visible')
+  stopTimer()
   activeGroupId = null
+
+  const playerPos = preRunPlayerPos ?? currentMapDef.player.startPosition
+  preRunPlayerPos = null
+
   gameMode = 'exploration'
   combatAppEl?.classList.add('mode-exploration')
-  loadMapForExploration(currentMapDef, currentMapDef.player.startPosition)
+  loadMapForExploration(currentMapDef, playerPos)
 }
 
 /**
@@ -943,64 +957,41 @@ function hideGroupPopup(): void {
   groupPopupEl?.classList.remove('is-visible')
 }
 
-/**
- * Retourne le groupe dont un monstre occupe la case `pos`, ou undefined si aucun.
- */
-function findGroupAtPosition(pos: Position): MonsterGroup | undefined {
-  return currentMapDef.monsterGroups.find(g =>
-    g.monsters.some(m => m.position.x === pos.x && m.position.y === pos.y),
-  )
-}
 
 /**
- * Retourne la case walkable adjacente au groupe la plus proche du joueur,
- * en évitant les cases déjà occupées par d'autres monstres du groupe.
- */
-function findAdjacentToGroup(group: MonsterGroup, player: Entity): Position | null {
-  const monsterCells = new Set(group.monsters.map(m => `${m.position.x},${m.position.y}`))
-  let best: Position | null = null
-  let bestDist = Infinity
-
-  for (const monster of group.monsters) {
-    for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]] as [number, number][]) {
-      const nx = monster.position.x + dx
-      const ny = monster.position.y + dy
-      if (monsterCells.has(`${nx},${ny}`)) continue
-      const cell = getCell(gameState.grid, { x: nx, y: ny })
-      if (!cell?.walkable) continue
-      const dist = Math.abs(nx - player.position.x) + Math.abs(ny - player.position.y)
-      if (dist < bestDist) { bestDist = dist; best = { x: nx, y: ny } }
-    }
-  }
-  return best
-}
-
-/**
- * Engage un combat contre `group` : anime d'abord la course du joueur vers une
- * case adjacente aux monstres, puis lance le combat via launchCombat.
- * Si le joueur est déjà adjacent (ou chemin impossible), le combat démarre immédiatement.
+ * Engage un combat contre `group` : anime la course du joueur directement sur
+ * la case du monstre le plus proche, puis lance le combat.
+ * Le joueur réapparaîtra sur cette même case après le combat.
  */
 function engageCombatGroup(group: MonsterGroup): void {
   const player = gameState.entities.find(e => e.team === 'player')
   if (!player) return
 
   hideGroupPopup()
-
-  // Annule tout mouvement en cours
   if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null }
   pendingAfterAnimation = null
   resetAnimations()
 
-  const targetPos = findAdjacentToGroup(group, player)
-  const alreadyClose = !targetPos ||
-    (targetPos.x === player.position.x && targetPos.y === player.position.y) ||
-    group.monsters.some(m =>
-      Math.abs(m.position.x - player.position.x) + Math.abs(m.position.y - player.position.y) <= 1
-    )
+  // Position de départ en combat choisie aléatoirement parmi les 3 prédéfinies
+  const selectedCombatPos: Position | null = group.playerStartPositions
+    ? group.playerStartPositions[Math.floor(Math.random() * 3)]!
+    : null
 
-  if (!alreadyClose) {
-    const monsterCells = new Set(group.monsters.map(m => `${m.position.x},${m.position.y}`))
-    const path = buildPath(gameState.grid, player.position, targetPos!, monsterCells)
+  // Cible de la course : le monstre le plus proche du joueur
+  const runTarget = [...group.monsters]
+    .sort((a, b) =>
+      (Math.abs(a.position.x - player.position.x) + Math.abs(a.position.y - player.position.y)) -
+      (Math.abs(b.position.x - player.position.x) + Math.abs(b.position.y - player.position.y))
+    )[0]?.position ?? null
+
+  // Mémorise la case cible — le joueur y réapparaît après le combat
+  preRunPlayerPos = runTarget ? { ...runTarget } : { ...player.position }
+
+  const alreadyThere = !runTarget ||
+    (runTarget.x === player.position.x && runTarget.y === player.position.y)
+
+  if (!alreadyThere) {
+    const path = buildPath(gameState.grid, player.position, runTarget!, new Set())
     const isValidPath = path.length >= 2 && path.every((p, i) => {
       if (i === 0) return true
       const prev = path[i - 1]!
@@ -1011,23 +1002,23 @@ function engageCombatGroup(group: MonsterGroup): void {
       gameState = {
         ...gameState,
         entities: gameState.entities.map(e =>
-          e.id === player.id ? { ...e, position: targetPos! } : e
+          e.id === player.id ? { ...e, position: runTarget! } : e
         ),
       }
       entityDirections.set(player.id, directionFromPath(path))
       startAnimation(player.id, path, performance.now())
       combatRunActive = true
-      pendingAfterAnimation = () => launchCombat(group, player.id)
+      pendingAfterAnimation = () => launchCombat(group, player.id, selectedCombatPos)
       startRenderLoop()
       return
     }
   }
 
-  launchCombat(group, player.id)
+  launchCombat(group, player.id, selectedCombatPos)
 }
 
 /** Initialise réellement le GameState de combat et bascule le mode. */
-function launchCombat(group: MonsterGroup, playerId: string): void {
+function launchCombat(group: MonsterGroup, playerId: string, playerCombatPos: Position | null): void {
   combatRunActive = false
   const player = gameState.entities.find(e => e.id === playerId)
   if (!player) return
@@ -1036,7 +1027,7 @@ function launchCombat(group: MonsterGroup, playerId: string): void {
   if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null }
   pendingAfterAnimation = null
 
-  gameState          = createCombatStateFromGroup(currentMapDef, group, player)
+  gameState          = createCombatStateFromGroup(currentMapDef, group, player, playerCombatPos ?? undefined)
   activeGroupId      = group.id
   combatEndScheduled = false
 
@@ -1078,13 +1069,6 @@ function handleExplorationClick(pos: Position): void {
   const cell = getCell(gameState.grid, pos)
   if (!cell) {
     tryMapTransition(pos, player)
-    return
-  }
-
-  // Clic sur un monstre de groupe → demande de confirmation
-  const clickedGroup = findGroupAtPosition(pos)
-  if (clickedGroup) {
-    showGroupPopup(clickedGroup, pos)
     return
   }
 
@@ -1135,13 +1119,23 @@ canvas.addEventListener('mouseleave', () => {
 canvas.addEventListener('click', (e) => {
   if (aiTurnActive || combatRunActive) return  // bloquer pendant le tour ennemi ou la course vers les monstres
 
-  const pos = screenToGrid(canvasPoint(e), origin)
+  const click = canvasPoint(e)
 
-  // Mode exploration : gère aussi les clics hors-grille (transition de map)
+  // Mode exploration : tester d'abord le hit-test pixel sur les sprites des monstres
   if (gameMode === 'exploration') {
-    handleExplorationClick(pos)
+    for (const group of currentMapDef.monsterGroups) {
+      for (const monster of group.monsters) {
+        if (hitTestEntitySprite(monster, origin, click.screenX, click.screenY)) {
+          showGroupPopup(group, monster.position)
+          return
+        }
+      }
+    }
+    handleExplorationClick(screenToGrid(click, origin))
     return
   }
+
+  const pos = screenToGrid(click, origin)
 
   // Mode combat : ignorer les clics hors grille
   if (!getCell(gameState.grid, pos)) return
@@ -1202,6 +1196,37 @@ canvas.addEventListener('click', (e) => {
 })
 
 // ---------------------------------------------------------------------------
+// Modal d'abandon
+// ---------------------------------------------------------------------------
+
+function openAbandonModal(): void {
+  abandonModalEl?.classList.add('is-visible')
+}
+
+function closeAbandonModal(): void {
+  abandonModalEl?.classList.remove('is-visible')
+}
+
+hudAbandonBtn?.addEventListener('click', () => {
+  if (gameMode !== 'combat' || gameState.status !== 'ongoing') return
+  openAbandonModal()
+})
+
+abandonConfirmEl?.addEventListener('click', () => {
+  closeAbandonModal()
+  returnToExplorationDefeated()
+})
+
+abandonCancelEl?.addEventListener('click', () => closeAbandonModal())
+
+// Ferme le modal sur clic extérieur
+document.addEventListener('pointerdown', (e) => {
+  if (!abandonModalEl?.classList.contains('is-visible')) return
+  const panel = abandonModalEl.querySelector('.abandon-panel')
+  if (panel && !panel.contains(e.target as Node)) closeAbandonModal()
+})
+
+// ---------------------------------------------------------------------------
 // Boutons HUD HTML
 // ---------------------------------------------------------------------------
 
@@ -1229,6 +1254,7 @@ document.addEventListener('keydown', (e) => {
       doEndTurn()
       break
     case 'ESCAPE':
+      if (abandonModalEl?.classList.contains('is-visible')) { closeAbandonModal(); break }
       if (pendingGroup !== null) { hideGroupPopup(); break }
       if (mode === 'spell') { mode = 'move'; render() }
       break

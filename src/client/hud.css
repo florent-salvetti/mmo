@@ -810,6 +810,27 @@ h1, h2, h3, .display { font-family: "Cinzel", serif; font-weight: 600; letter-sp
   text-shadow: 0 0 8px var(--danger-glow);
   box-shadow: 0 0 18px -2px var(--danger-glow);
 }
+.end-turn-btn:disabled { opacity: 0.35; pointer-events: none; }
+
+.abandon-btn {
+  display: flex; align-items: center; justify-content: center;
+  height: 58px; padding: 0 14px;
+  margin-left: 4px;
+  background: none;
+  border: 1px solid color-mix(in oklab, var(--danger) 55%, transparent);
+  color: color-mix(in oklab, var(--danger) 70%, var(--text-2));
+  font-family: "Rajdhani", sans-serif;
+  font-size: 12px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
+  cursor: pointer; flex-shrink: 0;
+  transition: border-color 0.15s, color 0.15s, box-shadow 0.15s;
+}
+.abandon-btn:hover:not(:disabled) {
+  border-color: var(--danger);
+  color: var(--danger);
+  box-shadow: 0 0 12px var(--danger-glow);
+}
+.abandon-btn:disabled { opacity: 0.25; pointer-events: none; }
+
 .pa-indicator {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   margin-right: 6px;
@@ -1097,3 +1118,57 @@ h1, h2, h3, .display { font-family: "Cinzel", serif; font-weight: 600; letter-sp
   background: rgba(77, 217, 255, 0.28);
   box-shadow: 0 0 20px var(--primary-glow);
 }
+
+/* ─── Modal de confirmation d'abandon ───────────────────────── */
+.abandon-modal {
+  position: absolute; inset: 0; z-index: 300;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(0, 0, 0, 0.65);
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+.abandon-modal.is-visible { opacity: 1; pointer-events: auto; }
+
+.abandon-panel {
+  background: var(--bg-panel-solid);
+  border: 1px solid var(--danger);
+  border-radius: 8px;
+  padding: 28px 36px;
+  max-width: 360px; width: 90%;
+  display: flex; flex-direction: column; gap: 14px;
+  text-align: center;
+  box-shadow: 0 8px 40px rgba(0,0,0,0.7), 0 0 40px var(--danger-glow);
+}
+.abandon-title {
+  font-family: "Cinzel", serif;
+  font-size: 18px; font-weight: 700; letter-spacing: 0.06em;
+  color: var(--danger);
+}
+.abandon-desc { font-size: 13px; color: var(--text-2); line-height: 1.5; }
+.abandon-actions {
+  display: flex; gap: 12px; justify-content: center;
+  margin-top: 4px;
+}
+.abandon-confirm-btn {
+  padding: 9px 24px;
+  background: rgba(255, 58, 140, 0.12);
+  border: 1px solid var(--danger); border-radius: 4px;
+  color: var(--danger);
+  font-family: "Rajdhani", sans-serif;
+  font-size: 14px; font-weight: 600; letter-spacing: 0.05em;
+  cursor: pointer; transition: background 0.15s, box-shadow 0.15s;
+}
+.abandon-confirm-btn:hover {
+  background: rgba(255, 58, 140, 0.24);
+  box-shadow: 0 0 14px var(--danger-glow);
+}
+.abandon-cancel-btn {
+  padding: 9px 24px;
+  background: var(--primary-soft);
+  border: 1px solid var(--primary); border-radius: 4px;
+  color: var(--primary);
+  font-family: "Rajdhani", sans-serif;
+  font-size: 14px; font-weight: 600; letter-spacing: 0.05em;
+  cursor: pointer; transition: background 0.15s;
+}
+.abandon-cancel-btn:hover { background: rgba(77, 217, 255, 0.24); }
