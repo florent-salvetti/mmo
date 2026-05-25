@@ -96,6 +96,57 @@ export type Action =
   | { type: 'USE_SPELL'; entityId: string; spellId: string; target: Position }
 
 // ---------------------------------------------------------------------------
+// Définition de map (données chargeables)
+// ---------------------------------------------------------------------------
+
+/** Un obstacle posé sur la grille dans la définition d'une map. */
+export type ObstacleEntry = {
+  x: number
+  y: number
+  type: 'hole' | 'cube'
+}
+
+/** Données de départ du joueur dans une définition de map. */
+export type PlayerEntry = {
+  id: string
+  name: string
+  startPosition: { x: number; y: number }
+  hp: number
+  maxHp: number
+  ap: number
+  maxAp: number
+  mp: number
+  maxMp: number
+}
+
+/** Données de départ d'un ennemi dans une définition de map. */
+export type EnemyEntry = {
+  id: string
+  name: string
+  creatureType: string
+  startPosition: { x: number; y: number }
+  hp: number
+  maxHp: number
+  ap: number
+  maxAp: number
+  mp: number
+  maxMp: number
+}
+
+/**
+ * Structure de données décrivant un combat chargeable depuis un fichier.
+ * Changer les données change le combat — sans toucher au code.
+ */
+export type MapDefinition = {
+  id: string
+  width: number
+  height: number
+  obstacles: ObstacleEntry[]
+  player: PlayerEntry
+  enemies: EnemyEntry[]
+}
+
+// ---------------------------------------------------------------------------
 // Sorts
 // ---------------------------------------------------------------------------
 

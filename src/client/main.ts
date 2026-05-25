@@ -1,4 +1,6 @@
-import type { Cell, Entity, GameState, Position } from '../shared/types'
+import type { Cell, Entity, GameState, MapDefinition, Position } from '../shared/types'
+import { createGameStateFromMap } from '../core/mapLoader'
+import combat01Raw from '../../data/maps/combat-01.json'
 import { getReachableCells } from '../core/movement'
 import { getSpell, getSpellTargetCells } from '../core/spells'
 import { getCell } from '../core/grid'
@@ -11,40 +13,10 @@ import { buildPath, startAnimation, tickAnimations, getVisualPosition, getCurren
 import { getUpcomingTurns } from '../core/turnOrder'
 
 // ---------------------------------------------------------------------------
-// État initial de démonstration
+// État initial — construit depuis la définition de map
 // ---------------------------------------------------------------------------
 
-const GRID_W = 12
-const GRID_H = 12
-// Trous : bloquent le mouvement, transparents pour la ligne de vue
-const HOLES = new Set(['2,3', '2,4', '2,5'])
-// Cubes : bloquent le mouvement ET la ligne de vue
-const CUBES = new Set(['3,2', '7,6', '6,7', '6,6'])
-
-const grid: Cell[][] = Array.from({ length: GRID_H }, (_, y) =>
-  Array.from({ length: GRID_W }, (_, x) => {
-    const key = `${x},${y}`
-    const obstacle = HOLES.has(key) ? 'hole' as const
-                   : CUBES.has(key) ? 'cube' as const
-                   : undefined
-    return { position: { x, y }, walkable: obstacle === undefined, obstacle }
-  }),
-)
-
-let gameState: GameState = {
-  grid,
-  entities: [
-    { id: 'player-1', name: 'Kirito', team: 'player',
-      position: { x: 1, y: 1 }, hp: 100, maxHp: 100, ap: 6, maxAp: 6, mp: 3, maxMp: 3 },
-    { id: 'enemy-1', name: 'Sanglier A', team: 'enemy', creatureType: 'sanglier',
-      position: { x: 4, y: 1 }, hp: 40, maxHp: 40, ap: 6, maxAp: 6, mp: 2, maxMp: 2 },
-    { id: 'enemy-2', name: 'Sanglier B', team: 'enemy', creatureType: 'sanglier',
-      position: { x: 5, y: 7 }, hp: 40, maxHp: 40, ap: 6, maxAp: 6, mp: 2, maxMp: 2 },
-  ],
-  currentEntityId: 'player-1',
-  turn: 1,
-  status: 'ongoing',
-}
+let gameState: GameState = createGameStateFromMap(combat01Raw as unknown as MapDefinition)
 
 // ---------------------------------------------------------------------------
 // Canvas + origine isométrique
@@ -78,14 +50,16 @@ function handleResize(): void {
   canvas.width  = Math.round(cssW * dpr)
   canvas.height = Math.round(cssH * dpr)
 
+  const gridW = gameState.grid[0].length
+  const gridH = gameState.grid.length
   // Taille de la grille en pixels natifs (sans scale)
-  const gridPixW = (GRID_W + GRID_H) * (TILE_WIDTH  / 2)
-  const gridPixH = (GRID_W + GRID_H) * (TILE_HEIGHT / 2)
+  const gridPixW = (gridW + gridH) * (TILE_WIDTH  / 2)
+  const gridPixH = (gridW + gridH) * (TILE_HEIGHT / 2)
   // Scale pour remplir ~92 % de l'espace disponible
   gridScale = Math.min(cssW / gridPixW, cssH / gridPixH) * 0.92
 
   // L'origine est calculée dans l'espace logique (cssW/gridScale × cssH/gridScale)
-  origin = computeOrigin(GRID_W, GRID_H, cssW / gridScale, cssH / gridScale)
+  origin = computeOrigin(gridW, gridH, cssW / gridScale, cssH / gridScale)
   render()
 }
 
