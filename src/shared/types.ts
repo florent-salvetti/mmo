@@ -133,6 +133,14 @@ export type EnemyEntry = {
   maxMp: number
 }
 
+/** Maps adjacentes accessibles depuis cette map (exploration). Absent = bord infranchissable. */
+export type MapNeighbors = {
+  nord?: string
+  sud?:  string
+  est?:  string
+  ouest?: string
+}
+
 /**
  * Structure de données décrivant un combat chargeable depuis un fichier.
  * Changer les données change le combat — sans toucher au code.
@@ -144,6 +152,8 @@ export type MapDefinition = {
   obstacles: ObstacleEntry[]
   player: PlayerEntry
   enemies: EnemyEntry[]
+  /** Voisinage optionnel — utilisé en exploration pour les transitions. */
+  neighbors?: MapNeighbors
 }
 
 // ---------------------------------------------------------------------------

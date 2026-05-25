@@ -22,6 +22,7 @@
     "mp": 3,
     "maxMp": 3
   },
+  "neighbors": { "est": "combat-02" },
   "enemies": [
     {
       "id": "enemy-1",

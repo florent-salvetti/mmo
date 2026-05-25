@@ -7,7 +7,7 @@ import { getSpell, getSpellTargetCells } from '../core/spells'
 import { getCell } from '../core/grid'
 import { applyAction } from '../core/reducer'
 import { getAIAction } from '../core/ai'
-import { renderGrid, renderHighlights, renderSpellRange, renderEntities, renderCubesAndEntities, renderDamageNumbers, spritesReady, type PlayerDirection } from './render/gridRenderer'
+import { renderGrid, renderHighlights, renderSpellRange, renderCubesAndEntities, renderDamageNumbers, spritesReady, type PlayerDirection } from './render/gridRenderer'
 import { startDamageNumber, startFlash, tickEffects, getActiveDamageNumbers, getFlashingEntities, resetEffects } from './effects'
 import { computeOrigin, screenToGrid, TILE_WIDTH, TILE_HEIGHT } from './render/projection'
 import { buildPath, startAnimation, tickAnimations, getVisualPosition, getCurrentSegment, resetAnimations } from './animation'
@@ -17,7 +17,14 @@ import { getUpcomingTurns } from '../core/turnOrder'
 // État initial — construit depuis la définition de map
 // ---------------------------------------------------------------------------
 
-let gameState: GameState = createGameStateFromMap(combat01Raw as unknown as MapDefinition)
+let currentMapDef: MapDefinition = combat01Raw as unknown as MapDefinition
+let gameState: GameState         = createGameStateFromMap(currentMapDef)
+
+/** Registre de toutes les maps disponibles, indexées par id. */
+const mapRegistry = new Map<string, MapDefinition>([
+  ['combat-01', combat01Raw as unknown as MapDefinition],
+  ['combat-02', combat02Raw as unknown as MapDefinition],
+])
 
 // ---------------------------------------------------------------------------
 // Canvas + origine isométrique
@@ -615,7 +622,6 @@ function animationLoop(now: number): void {
 
 /** Affiche le mode de jeu courant en bas à gauche du canvas. */
 function renderModeIndicator(): void {
-  const logW = cssW / gridScale
   const logH = cssH / gridScale
   const label = gameMode === 'combat' ? 'MODE: combat' : 'MODE: exploration'
   const color = gameMode === 'combat' ? '#ff6666' : '#66ccff'
@@ -774,12 +780,20 @@ function canvasPoint(e: MouseEvent): { screenX: number; screenY: number } {
 /**
  * Déplacement libre en mode exploration : le joueur marche vers la case cliquée
  * sans limite de PM ni mécanique de tour. Réutilise le BFS et l'animation existants.
+ * Un clic hors-grille depuis le bord correspondant déclenche une transition de map.
  */
 function handleExplorationClick(pos: Position): void {
   const player = gameState.entities.find(e => e.team === 'player')
   if (!player) return
+
+  // Clic hors-grille : tentative de transition vers une map voisine
   const cell = getCell(gameState.grid, pos)
-  if (!cell || !cell.walkable) return
+  if (!cell) {
+    tryMapTransition(pos, player)
+    return
+  }
+
+  if (!cell.walkable) return
   if (pos.x === player.position.x && pos.y === player.position.y) return
 
   const blockedForAnim = new Set(
@@ -827,13 +841,15 @@ canvas.addEventListener('click', (e) => {
   if (aiTurnActive) return  // bloquer les clics pendant le tour ennemi
 
   const pos = screenToGrid(canvasPoint(e), origin)
-  if (!getCell(gameState.grid, pos)) return
 
-  // Mode exploration : déplacement libre, pas de mécanique de combat
+  // Mode exploration : gère aussi les clics hors-grille (transition de map)
   if (gameMode === 'exploration') {
     handleExplorationClick(pos)
     return
   }
+
+  // Mode combat : ignorer les clics hors grille
+  if (!getCell(gameState.grid, pos)) return
 
   if (mode === 'move') {
     const prevState      = gameState
@@ -973,7 +989,8 @@ function loadMap(def: MapDefinition): void {
   pendingAfterAnimation = null
 
   // Nouvel état de jeu
-  gameState = createGameStateFromMap(def)
+  currentMapDef = def
+  gameState     = createGameStateFromMap(def)
 
   // Réinitialiser l'UI
   gameMode      = 'combat'
@@ -1003,6 +1020,88 @@ function loadMap(def: MapDefinition): void {
   // Message d'intro + timer
   pushLog(`Combat commencé. À <span class="actor">${currentEntity().name}</span> de jouer !`, 'system')
   startTurnTimer()
+}
+
+// ---------------------------------------------------------------------------
+// Transitions de map (mode exploration)
+// ---------------------------------------------------------------------------
+
+/**
+ * Calcule la position d'entrée sur la map voisine selon le côté de sortie.
+ * La coordonnée perpendiculaire (ex. Y pour une sortie est/ouest) est conservée
+ * et simplement clampée aux limites de la nouvelle map.
+ */
+function computeEntryPosition(def: MapDefinition, exitDir: 'nord' | 'sud' | 'est' | 'ouest', player: Entity): Position {
+  const w = def.width
+  const h = def.height
+  switch (exitDir) {
+    case 'est':   return { x: 0,     y: Math.min(player.position.y, h - 1) }
+    case 'ouest': return { x: w - 1, y: Math.min(player.position.y, h - 1) }
+    case 'nord':  return { x: Math.min(player.position.x, w - 1), y: h - 1 }
+    case 'sud':   return { x: Math.min(player.position.x, w - 1), y: 0     }
+  }
+}
+
+/**
+ * Charge la map voisine en restant en mode exploration.
+ * Ne réinitialise que ce qui est nécessaire (état de jeu, animations, orientations).
+ * Ne touche pas au journal, au mode, au HUD combat caché.
+ */
+function loadMapForExploration(def: MapDefinition, playerEntry: Position): void {
+  if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null }
+  pendingAfterAnimation = null
+
+  currentMapDef = def
+  gameState     = createGameStateFromMap(def)
+
+  // Placer le joueur à l'entrée (écrase la startPosition de la map)
+  gameState = {
+    ...gameState,
+    entities: gameState.entities.map(e =>
+      e.team === 'player' ? { ...e, position: playerEntry } : e
+    ),
+  }
+
+  mode          = 'move'
+  activeSpellId = SPELL_COUP_EPEE
+  hoveredPos    = null
+  aiTurnActive  = false
+
+  entityDirections.clear()
+  resetEffects()
+  resetAnimations()
+
+  initEntityDirections()
+  refreshReachable()
+  refreshSpellRange()
+
+  handleResize()
+}
+
+/**
+ * Tente une transition vers la map voisine dans la direction du clic hors-grille.
+ * La transition ne s'active que si le joueur est déjà sur le bord correspondant.
+ */
+function tryMapTransition(clickedPos: Position, player: Entity): void {
+  const gridW = gameState.grid[0].length
+  const gridH = gameState.grid.length
+
+  let exitDir: 'nord' | 'sud' | 'est' | 'ouest' | null = null
+  if (clickedPos.x >= gridW && player.position.x === gridW - 1) exitDir = 'est'
+  else if (clickedPos.x < 0  && player.position.x === 0)        exitDir = 'ouest'
+  else if (clickedPos.y < 0  && player.position.y === 0)        exitDir = 'nord'
+  else if (clickedPos.y >= gridH && player.position.y === gridH - 1) exitDir = 'sud'
+
+  if (!exitDir) return
+
+  const neighborId = currentMapDef.neighbors?.[exitDir]
+  if (!neighborId) return
+
+  const neighborDef = mapRegistry.get(neighborId)
+  if (!neighborDef) return
+
+  const entryPos = computeEntryPosition(neighborDef, exitDir, player)
+  loadMapForExploration(neighborDef, entryPos)
 }
 
 // ---------------------------------------------------------------------------
