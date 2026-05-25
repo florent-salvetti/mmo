@@ -177,7 +177,9 @@ function setGameMode(newMode: GameMode): void {
       else startTurnTimer()                      // [MODE COMBAT]
     }
   }
-  render()
+  // handleResize recalcule gridScale pour le nouveau layout (canvas plus grand/petit)
+  // puis appelle render() — indispensable au changement de mode.
+  handleResize()
 }
 
 /**

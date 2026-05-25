@@ -613,6 +613,7 @@ h1, h2, h3, .display { font-family: "Cinzel", serif; font-weight: 600; letter-sp
   height: 100%; width: 100%;
   min-height: 0;
   overflow: hidden;
+  grid-column: 2; /* ancré en col. centrale : évite le repositionnement si les panneaux sont display:none */
 }
 
 /* Canvas fills the arena zone */
@@ -928,6 +929,7 @@ h1, h2, h3, .display { font-family: "Cinzel", serif; font-weight: 600; letter-sp
   .turn-token .tt-label { font-size: 12px; }
   .turn-progress { font-size: 10px; padding: 4px 8px; }
   .stage { grid-template-columns: 1fr; padding: 8px; gap: 8px; position: relative; }
+  .arena-wrap { grid-column: 1; } /* colonne unique en mobile */
   .side-panel { display: none; }
   .side-panel.mobile-active {
     display: flex; position: absolute; top: 0; bottom: 0;
@@ -962,10 +964,18 @@ h1, h2, h3, .display { font-family: "Cinzel", serif; font-weight: 600; letter-sp
 }
 
 /* ─── Mode exploration : masque tous les éléments de combat ── */
-.combat-app.mode-exploration .topbar,
+
+/* Panneaux latéraux : display:none OK — grid-column:2 sur .arena-wrap compense */
 .combat-app.mode-exploration .side-panel,
-.combat-app.mode-exploration .spellbar-wrap,
 .combat-app.mode-exploration .mobile-tab,
 .combat-app.mode-exploration .mobile-backdrop {
   display: none;
+}
+
+/* Topbar et spellbar : visibility:hidden pour conserver leur hauteur dans la grille CSS.
+   display:none effondrerait les rangées auto de .combat-app et repositionnerait .stage. */
+.combat-app.mode-exploration .topbar,
+.combat-app.mode-exploration .spellbar-wrap {
+  visibility: hidden;
+  pointer-events: none;
 }
