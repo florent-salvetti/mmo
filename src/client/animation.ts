@@ -1,8 +1,8 @@
 import type { Cell, Position } from '../shared/types'
 import { getNeighbors } from '../core/grid'
 
-/** Durée d'animation par case traversée (ms). Une entité avec mp=3 s'anime en ~300 ms. */
-const MS_PER_STEP = 100
+/** Durée d'animation par case traversée (ms). Une entité avec mp=3 s'anime en ~600 ms. */
+const MS_PER_STEP = 200
 
 type MoveAnimation = {
   entityId: string

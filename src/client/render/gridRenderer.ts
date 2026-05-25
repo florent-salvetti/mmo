@@ -1,5 +1,6 @@
 import type { Cell, Entity, Position } from '../../shared/types'
 import type { ActiveDamageNumber } from '../effects'
+import { getVisualPosition } from '../animation'
 import { gridToScreen, TILE_WIDTH, TILE_HEIGHT, type ScreenPos } from './projection'
 
 // Couleurs de la grille — calquées sur les tokens CSS du design
@@ -124,6 +125,13 @@ function knightIdleJson(dir: PlayerDirection): string {
   return `/sprites/KnightBasic/Idle/Knight_Idle_dir${KNIGHT_DIR[dir]}.json`
 }
 
+function knightWalkPng(dir: PlayerDirection): string {
+  return `/sprites/KnightBasic/Walk/Knight_Walk_dir${KNIGHT_DIR[dir]}.png`
+}
+function knightWalkJson(dir: PlayerDirection): string {
+  return `/sprites/KnightBasic/Walk/Knight_Walk_dir${KNIGHT_DIR[dir]}.json`
+}
+
 /**
  * Taille d'affichage des frames Knight (frames carrées 256×256).
  * Le personnage occupe ~25–30 % de la frame → ajuster ici si trop grand/petit.
@@ -158,6 +166,7 @@ export const spritesReady: Promise<void> = Promise.all([
     ...DIRECTIONS.map(dir => loadSprite(spritePath(prefix, dir))),
   ]),
   ...DIRECTIONS.map(dir => loadSpritesheet(knightIdlePng(dir), knightIdleJson(dir))),
+  ...DIRECTIONS.map(dir => loadSpritesheet(knightWalkPng(dir), knightWalkJson(dir))),
 ]).then(() => undefined)
 
 /**
@@ -260,9 +269,11 @@ function drawEntity(
 
   if (entity.team === 'player') {
     // ── Joueur : spritesheet Knight (frame 0 Idle) ──────────────────────────
-    const sheet = loadedSheets.get(knightIdlePng(dir))
+    const now     = performance.now()
+    const moving  = getVisualPosition(entity.id, now) !== null
+    const sheet   = loadedSheets.get(moving ? knightWalkPng(dir) : knightIdlePng(dir))
     if (sheet && sheet.frames.length > 0) {
-      const fi      = getCurrentFrame(sheet.durations, performance.now())
+      const fi      = getCurrentFrame(sheet.durations, now)
       const frame   = sheet.frames[fi]!
       const dw      = KNIGHT_DISPLAY_W
       // Ancre les pieds (à KNIGHT_FEET_RATIO de la hauteur de frame) sur le point-sol (screenY)
