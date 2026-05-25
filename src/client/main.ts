@@ -8,6 +8,7 @@ import { renderGrid, renderHighlights, renderSpellRange, renderEntities, renderD
 import { startDamageNumber, startFlash, tickEffects, getActiveDamageNumbers, getFlashingEntities } from './effects'
 import { computeOrigin, screenToGrid } from './render/projection'
 import { buildPath, startAnimation, tickAnimations, getVisualPosition, getCurrentSegment } from './animation'
+import { getUpcomingTurns } from '../core/turnOrder'
 
 // ---------------------------------------------------------------------------
 // État initial de démonstration
@@ -77,13 +78,26 @@ function handleResize(): void {
 // Références DOM du HUD HTML (cachées une fois au démarrage)
 // ---------------------------------------------------------------------------
 
-const hudApVal        = document.querySelector<HTMLElement>('.hud-res-val.ap')
-const hudApBar        = document.querySelector<HTMLElement>('.hud-res-bar-fill.ap')
-const hudMpVal        = document.querySelector<HTMLElement>('.hud-res-val.mp')
-const hudMpBar        = document.querySelector<HTMLElement>('.hud-res-bar-fill.mp')
-const hudSpellButtons = document.querySelectorAll<HTMLButtonElement>('.hud-spell[data-spell-id]')
-const hudEndTurnBtn   = document.querySelector<HTMLButtonElement>('.hud-end-turn')
+const hudApVal        = document.querySelector<HTMLElement>('.v.ap')
+const hudMpVal        = document.querySelector<HTMLElement>('.v.mp')
+const hudSpellButtons = document.querySelectorAll<HTMLButtonElement>('.spell[data-spell-id]')
+const hudEndTurnBtn   = document.querySelector<HTMLButtonElement>('.end-turn-btn')
 const hudHintEl       = document.querySelector<HTMLElement>('.hud-hint')
+const hudTurnNumEl    = document.querySelector<HTMLElement>('.turn-numval')
+const hudActiveActor  = document.querySelector<HTMLElement>('.active-actor')
+const hudTimerEl      = document.querySelector<HTMLElement>('.turn-timer')
+const hudTimerValEl   = document.querySelector<HTMLElement>('.timer-value')
+const hudTimerFillEl  = document.querySelector<SVGCircleElement>('.timer-fill')
+const hudTimelineEl   = document.querySelector<HTMLElement>('.timeline-track')
+const hudAlliesEl     = document.querySelector<HTMLElement>('.portraits-allies')
+const hudEnemiesEl    = document.querySelector<HTMLElement>('.portraits-enemies')
+const hudLogEntriesEl = document.querySelector<HTMLElement>('.log-entries')
+const hudLogCountEl   = document.querySelector<HTMLElement>('.log-count')
+const leftTabBtn      = document.querySelector<HTMLButtonElement>('.mobile-tab.left-tab')
+const rightTabBtn     = document.querySelector<HTMLButtonElement>('.mobile-tab.right-tab')
+const mobileBackdrop  = document.querySelector<HTMLElement>('.mobile-backdrop')
+const leftPanel       = document.querySelector<HTMLElement>('.side-panel.left')
+const rightPanel      = document.querySelector<HTMLElement>('.side-panel.right')
 
 // ---------------------------------------------------------------------------
 // État de l'UI
@@ -106,6 +120,17 @@ let spellRange:    Cell[]          = []
 let aiTurnActive:  boolean         = false
 let pendingAfterAnimation: (() => void) | null = null
 let rafId: number | null = null
+
+// ---------------------------------------------------------------------------
+// Timer de tour et journal de combat
+// ---------------------------------------------------------------------------
+
+const TURN_DURATION = 30
+let timeLeft    = TURN_DURATION
+let timerHandle: ReturnType<typeof setInterval> | null = null
+
+type LogEntry = { turn: number; html: string; type?: string }
+const logEntries: LogEntry[] = []
 
 function currentEntity(): Entity {
   return gameState.entities.find(e => e.id === gameState.currentEntityId)!
@@ -165,6 +190,42 @@ function triggerHitEffects(prev: GameState, next: GameState): void {
     startDamageNumber(entity.id, before.hp - entity.hp, now)
     startFlash(entity.id, now)
   }
+}
+
+function updateTimerDOM(): void {
+  if (hudTimerValEl) hudTimerValEl.textContent = String(timeLeft)
+  if (hudTimerFillEl) {
+    const pct = timeLeft / TURN_DURATION
+    hudTimerFillEl.style.strokeDasharray = `${pct * 94.25} 94.25`
+  }
+  if (hudTimerEl) hudTimerEl.classList.toggle('is-low', timeLeft <= 10)
+}
+
+function startTurnTimer(): void {
+  if (timerHandle !== null) { clearInterval(timerHandle); timerHandle = null }
+  timeLeft = TURN_DURATION
+  updateTimerDOM()
+  timerHandle = setInterval(() => {
+    timeLeft = Math.max(0, timeLeft - 1)
+    updateTimerDOM()
+    if (timeLeft === 0) {
+      clearInterval(timerHandle!)
+      timerHandle = null
+      if (!aiTurnActive) doEndTurn()
+    }
+  }, 1000)
+}
+
+function pushLog(html: string, type?: string): void {
+  logEntries.push({ turn: gameState.turn, html, type })
+  if (hudLogEntriesEl) {
+    const entry = document.createElement('div')
+    entry.className = type ? `log-entry ${type}` : 'log-entry'
+    entry.innerHTML = `<span class="log-time">${gameState.turn}</span><span>${html}</span>`
+    hudLogEntriesEl.appendChild(entry)
+    hudLogEntriesEl.scrollTop = hudLogEntriesEl.scrollHeight
+  }
+  if (hudLogCountEl) hudLogCountEl.textContent = String(logEntries.length)
 }
 
 function refreshReachable(): void {
@@ -263,7 +324,7 @@ function runAIStep(): void {
     pendingAfterAnimation = () => {
       if (gameState.status !== 'ongoing') { aiTurnActive = false; render(); return }
       if (isCurrentEntityEnemy()) setTimeout(runAIStep, 0)
-      else { aiTurnActive = false; render() }
+      else { aiTurnActive = false; startTurnTimer(); render() }
     }
     startRenderLoop()
     return
@@ -302,6 +363,7 @@ function runAIStep(): void {
       setTimeout(runAIStep, AI_STEP_DELAY_MS)
     } else {
       aiTurnActive = false
+      startTurnTimer()
       render()
     }
   } else {
@@ -319,46 +381,80 @@ function startAITurn(): void {
 // Rendu
 // ---------------------------------------------------------------------------
 
+/** Génère le HTML d'une carte portrait pour un panneau latéral. */
+function makePortraitCard(entity: Entity, isActive: boolean): string {
+  const dead   = entity.hp <= 0
+  const hpPct  = Math.round((entity.hp / entity.maxHp) * 100)
+  const apPct  = dead ? 0 : Math.round((entity.ap / entity.maxAp) * 100)
+  const mpPct  = dead ? 0 : Math.round((entity.mp / entity.maxMp) * 100)
+  const glyph  = entity.name.charAt(0).toUpperCase()
+  const variant = entity.team === 'player' ? 'is-player'
+                : isActive                 ? 'is-target'
+                :                            'is-enemy'
+  const cls = ['portrait-card', variant, dead ? 'is-dead' : ''].filter(Boolean).join(' ')
+  return `<div class="${cls}">
+    <div class="portrait-head">
+      <div class="portrait-frame">
+        <span class="portrait-glyph">${glyph}</span>
+      </div>
+      <div class="portrait-info">
+        <div class="portrait-name">${entity.name}${dead ? ' †' : ''}</div>
+        <div class="portrait-class">${entity.team === 'enemy' ? 'Ennemi' : 'Joueur'}</div>
+      </div>
+    </div>
+    <div class="stat-bars">
+      <div class="stat-row hp">
+        <span class="stat-label">PV</span>
+        <div class="stat-track"><div class="stat-fill" style="width:${hpPct}%"></div></div>
+        <span class="stat-val"><strong>${entity.hp}</strong>/${entity.maxHp}</span>
+      </div>
+      ${dead ? '' : `<div class="stat-row ap">
+        <span class="stat-label">PA</span>
+        <div class="stat-track"><div class="stat-fill" style="width:${apPct}%"></div></div>
+        <span class="stat-val"><strong>${entity.ap}</strong>/${entity.maxAp}</span>
+      </div>
+      <div class="stat-row mp">
+        <span class="stat-label">PM</span>
+        <div class="stat-track"><div class="stat-fill" style="width:${mpPct}%"></div></div>
+        <span class="stat-val"><strong>${entity.mp}</strong>/${entity.maxMp}</span>
+      </div>`}
+    </div>
+  </div>`
+}
+
 /**
  * Met à jour le HUD HTML pour refléter l'état courant du jeu.
  * Appelé à chaque render() — idempotent, rapide (lecture/écriture DOM minimale).
  */
 function updateHudDOM(): void {
-  const entity     = currentEntity()
-  const gameOver   = gameState.status !== 'ongoing'
+  const entity      = currentEntity()
+  const gameOver    = gameState.status !== 'ongoing'
   const allDisabled = aiTurnActive || gameOver
 
-  // Jauges PA
+  // Valeurs PA / PM dans la barre de sorts
   if (hudApVal) hudApVal.textContent = String(entity.ap)
-  if (hudApBar) hudApBar.style.width  = `${(entity.ap / entity.maxAp) * 100}%`
-
-  // Jauges PM
   if (hudMpVal) hudMpVal.textContent = String(entity.mp)
-  if (hudMpBar) hudMpBar.style.width  = `${(entity.mp / entity.maxMp) * 100}%`
 
   // Boutons de sort
   for (const btn of hudSpellButtons) {
-    const spellId = btn.dataset['spellId']!
-    const spell   = getSpell(spellId)
-    const cd      = entity.cooldowns?.[spellId] ?? 0
-    const onCd    = cd > 0
-    const noAp    = !allDisabled && !onCd && spell !== undefined && entity.ap < spell.apCost
+    const spellId  = btn.dataset['spellId']!
+    const spell    = getSpell(spellId)
+    const cd       = entity.cooldowns?.[spellId] ?? 0
+    const onCd     = cd > 0
+    const noAp     = !allDisabled && !onCd && spell !== undefined && entity.ap < spell.apCost
     const isActive = !allDisabled && !onCd && mode === 'spell' && activeSpellId === spellId
 
-    // Coût PA réel depuis les données du sort
-    const costEl = btn.querySelector<HTMLElement>('.hs-cost')
+    const costEl = btn.querySelector<HTMLElement>('.spell-cost')
     if (costEl && spell) costEl.textContent = String(spell.apCost)
 
-    // Indicateur de cooldown (chiffre + masquage)
     const cdEl = btn.querySelector<HTMLElement>('.hs-cd')
     if (cdEl) {
       cdEl.textContent = String(cd)
       cdEl.classList.toggle('hidden', !onCd)
     }
 
-    btn.classList.toggle('active',      isActive)
-    btn.classList.toggle('on-cooldown', onCd)
-    btn.classList.toggle('no-ap',       noAp)
+    btn.classList.toggle('is-selected', isActive)
+    btn.classList.toggle('is-disabled', onCd || noAp || allDisabled)
     btn.disabled = allDisabled || onCd
   }
 
@@ -367,6 +463,52 @@ function updateHudDOM(): void {
 
   // Hint contextuel
   if (hudHintEl) hudHintEl.textContent = computeHintText(entity)
+
+  // Numéro de tour
+  if (hudTurnNumEl) hudTurnNumEl.textContent = String(gameState.turn).padStart(2, '0')
+
+  // Carte acteur courant
+  if (hudActiveActor) {
+    const isEnemy = entity.team === 'enemy'
+    hudActiveActor.className = `active-actor ${isEnemy ? 'is-enemy' : 'is-player'}`
+    const hpPct = Math.round((entity.hp / entity.maxHp) * 100)
+    hudActiveActor.innerHTML = `
+      <div class="aa-hex"><span class="aa-glyph">${entity.name.charAt(0).toUpperCase()}</span></div>
+      <div class="aa-info">
+        <div class="aa-label">${isEnemy ? 'ENNEMI' : 'À VOUS DE JOUER'}</div>
+        <div class="aa-name">${entity.name}</div>
+        <div class="aa-hp">
+          <div class="aa-hp-fill" style="width:${hpPct}%"></div>
+          <span class="aa-hp-text mono">${entity.hp}/${entity.maxHp}</span>
+        </div>
+      </div>`
+  }
+
+  // Timeline d'initiative (tokens à venir, hors acteur courant)
+  if (hudTimelineEl) {
+    const turns = getUpcomingTurns(gameState, 9).slice(1)
+    hudTimelineEl.innerHTML = turns.map(e => {
+      const cls = `turn-token ${e.team === 'player' ? 'is-player' : 'is-enemy'}`
+      return `<div class="${cls}">
+        <span class="tt-label">${e.name.charAt(0).toUpperCase()}</span>
+        <span class="tt-name">${e.name}</span>
+      </div>`
+    }).join('')
+  }
+
+  // Panneaux de portraits
+  if (hudAlliesEl) {
+    hudAlliesEl.innerHTML = gameState.entities
+      .filter(e => e.team === 'player')
+      .map(e => makePortraitCard(e, e.id === gameState.currentEntityId))
+      .join('')
+  }
+  if (hudEnemiesEl) {
+    hudEnemiesEl.innerHTML = gameState.entities
+      .filter(e => e.team === 'enemy')
+      .map(e => makePortraitCard(e, e.id === gameState.currentEntityId))
+      .join('')
+  }
 }
 
 /** Remplace la position des entités animées par leur position visuelle interpolée. */
@@ -522,12 +664,16 @@ function selectSpell(spellId: string): void {
 /** Termine le tour du joueur courant. Sans effet pendant le tour ennemi. */
 function doEndTurn(): void {
   if (aiTurnActive) return
+  const prevName = currentEntity().name
+  if (timerHandle !== null) { clearInterval(timerHandle); timerHandle = null }
   gameState = applyAction(gameState, { type: 'END_TURN', entityId: gameState.currentEntityId })
   mode = 'move'
   refreshReachable()
   refreshSpellRange()
+  pushLog(`<span class="actor">${prevName}</span> termine son tour.`, 'system')
   render()
   if (isCurrentEntityEnemy()) startAITurn()
+  else startTurnTimer()
 }
 
 // ---------------------------------------------------------------------------
@@ -633,8 +779,60 @@ for (const btn of hudSpellButtons) {
   })
 }
 
-hudEndTurnBtn?.addEventListener('click', () => {
-  doEndTurn()
+hudEndTurnBtn?.addEventListener('click', () => doEndTurn())
+
+// ---------------------------------------------------------------------------
+// Clavier
+// ---------------------------------------------------------------------------
+
+document.addEventListener('keydown', (e) => {
+  if (e.repeat) return
+  switch (e.key.toUpperCase()) {
+    case 'A': selectSpell(SPELL_COUP_EPEE); break
+    case 'Z': selectSpell(SPELL_TIR_ARC);  break
+    case 'E': selectSpell(SPELL_CHARGE);   break
+    case 'F':
+    case ' ':
+      e.preventDefault()
+      doEndTurn()
+      break
+    case 'ESCAPE':
+      if (mode === 'spell') { mode = 'move'; render() }
+      break
+  }
+})
+
+// ---------------------------------------------------------------------------
+// Panneaux mobiles
+// ---------------------------------------------------------------------------
+
+function toggleMobilePanel(side: 'left' | 'right'): void {
+  const panel     = side === 'left' ? leftPanel    : rightPanel
+  const tab       = side === 'left' ? leftTabBtn   : rightTabBtn
+  const otherPanel = side === 'left' ? rightPanel   : leftPanel
+  const otherTab   = side === 'left' ? rightTabBtn  : leftTabBtn
+  const isActive  = panel?.classList.contains('mobile-active') ?? false
+  otherPanel?.classList.remove('mobile-active')
+  otherTab?.classList.remove('active')
+  if (isActive) {
+    panel?.classList.remove('mobile-active')
+    tab?.classList.remove('active')
+    if (mobileBackdrop) mobileBackdrop.style.display = 'none'
+  } else {
+    panel?.classList.add('mobile-active')
+    tab?.classList.add('active')
+    if (mobileBackdrop) mobileBackdrop.style.display = 'block'
+  }
+}
+
+leftTabBtn?.addEventListener('click',  () => toggleMobilePanel('left'))
+rightTabBtn?.addEventListener('click', () => toggleMobilePanel('right'))
+mobileBackdrop?.addEventListener('click', () => {
+  leftPanel?.classList.remove('mobile-active')
+  rightPanel?.classList.remove('mobile-active')
+  leftTabBtn?.classList.remove('active')
+  rightTabBtn?.classList.remove('active')
+  if (mobileBackdrop) mobileBackdrop.style.display = 'none'
 })
 
 // ---------------------------------------------------------------------------
@@ -647,3 +845,5 @@ refreshSpellRange()
 handleResize()                                     // dimensionne le canvas et premier rendu
 new ResizeObserver(handleResize).observe(canvas)   // recalcul à chaque resize de fenêtre
 spritesReady.then(() => render())                  // relance quand les sprites sont chargés
+pushLog(`Combat commencé. À <span class="actor">${currentEntity().name}</span> de jouer !`, 'system')
+startTurnTimer()

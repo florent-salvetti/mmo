@@ -3,107 +3,167 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>MMO</title>
-    <!-- Polices du design : Cinzel (titres), Rajdhani (UI), JetBrains Mono (chiffres) -->
+    <title>MMO — Combat Tactique</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Rajdhani:wght@500;600;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Rajdhani:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/src/client/hud.css">
-    <style>
-      * { margin: 0; padding: 0; box-sizing: border-box; }
-      body {
-        background: #0a0f1f;
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        height: 100vh;
-        overflow: hidden;
-      }
-      /* Conteneur relatif qui englobe canvas + overlay HUD */
-      .canvas-wrapper {
-        position: relative;
-        width:    100vw;
-        height:   100vh;
-      }
-      canvas {
-        display: block;
-        width:   100%;
-        height:  100%;
-      }
-    </style>
   </head>
   <body>
-    <div class="canvas-wrapper">
-      <canvas id="game-canvas" width="800" height="600"></canvas>
+    <div class="combat-app">
 
-      <!-- ══════════════════════════════════════════════════════════
-           HUD — Barre de sorts (bande basse y = 460 → 600)
-           pointer-events: none sur le wrapper, auto sur .hud-inner
-           ══════════════════════════════════════════════════════════ -->
-      <div class="hud-spellbar" aria-label="Barre de sorts">
-        <div class="hud-inner">
+      <!-- ═══════════════════════════════════════════════════════════
+           TOP BAR : numéro de tour · timer · acteur actif · file
+           ═══════════════════════════════════════════════════════════ -->
+      <div class="topbar">
+        <div class="timeline">
 
-          <!-- PA et PM -->
-          <div class="hud-resources">
-            <div class="hud-res">
-              <span class="hud-res-label">PA</span>
-              <span class="hud-res-val ap">6</span>
-              <div class="hud-res-bar"><div class="hud-res-bar-fill ap"></div></div>
-            </div>
-            <div class="hud-res">
-              <span class="hud-res-label">PM</span>
-              <span class="hud-res-val mp">3</span>
-              <div class="hud-res-bar"><div class="hud-res-bar-fill mp"></div></div>
+          <!-- Compteur de tour -->
+          <div class="turn-progress mono">Tour<strong class="turn-numval">01</strong></div>
+
+          <!-- Anneau compte-à-rebours -->
+          <div class="turn-timer">
+            <svg class="timer-ring" viewBox="0 0 36 36" width="36" height="36" aria-hidden="true">
+              <circle cx="18" cy="18" r="15" class="timer-track"/>
+              <circle cx="18" cy="18" r="15" class="timer-fill" style="stroke-dasharray:94.25 94.25"/>
+            </svg>
+            <span class="timer-value mono">30</span>
+          </div>
+
+          <!-- Carte de l'acteur courant -->
+          <div class="active-actor is-player">
+            <div class="aa-hex"><span class="aa-glyph">K</span></div>
+            <div class="aa-info">
+              <div class="aa-label">À VOUS DE JOUER</div>
+              <div class="aa-name">Kirito</div>
+              <div class="aa-hp">
+                <div class="aa-hp-fill" style="width:100%"></div>
+                <span class="aa-hp-text mono">100/100</span>
+              </div>
             </div>
           </div>
 
-          <div class="hud-vsep"></div>
+          <div class="timeline-arrow">→</div>
 
-          <!-- Sorts -->
-          <div class="hud-spells">
+          <!-- File d'initiative (tokens à venir) -->
+          <div class="timeline-track" aria-label="Ordre d'initiative"></div>
 
-            <!-- Coup d'épée : 3 PA, portée 1 -->
-            <button class="hud-spell" data-spell-id="coup-epee" title="Coup d'épée — 3 PA">
-              <span class="hs-key">A</span>
-              <span class="hs-cost">3</span>
-              <span class="hs-icon">⚔️</span>
-              <span class="hs-name">Coup d'épée</span>
-              <div class="hs-cd hidden">0</div>
-            </button>
+        </div>
+      </div>
 
-            <!-- Tir à l'arc : 4 PA, portée 2-5 -->
-            <button class="hud-spell" data-spell-id="tir-arc" title="Tir à l'arc — 4 PA">
-              <span class="hs-key">Z</span>
-              <span class="hs-cost">4</span>
-              <span class="hs-icon">🏹</span>
-              <span class="hs-name">Tir à l'arc</span>
-              <div class="hs-cd hidden">0</div>
-            </button>
+      <!-- ═══════════════════════════════════════════════════════════
+           SCÈNE : panneaux latéraux + arène canvas centrale
+           ═══════════════════════════════════════════════════════════ -->
+      <div class="stage">
 
-            <!-- Charge : 2 PA, portée 1-3 -->
-            <button class="hud-spell" data-spell-id="charge" title="Charge — 2 PA">
-              <span class="hs-key">E</span>
-              <span class="hs-cost">2</span>
-              <span class="hs-icon">💨</span>
-              <span class="hs-name">Charge</span>
-              <div class="hs-cd hidden">0</div>
-            </button>
+        <!-- Onglets flottants pour mobile -->
+        <button class="mobile-tab left-tab" aria-label="Équipe">
+          <span class="tab-glyph">⚔</span>
+          <span class="tab-label">Équipe</span>
+        </button>
+        <button class="mobile-tab right-tab" aria-label="Ennemis">
+          <span class="tab-glyph">✦</span>
+          <span class="tab-label">Ennemis</span>
+        </button>
+        <div class="mobile-backdrop"></div>
 
+        <!-- Panneau gauche : joueur + journal de combat -->
+        <div class="side-panel left">
+          <div class="portraits-allies"></div>
+          <div class="combat-log">
+            <div class="log-header">
+              <span class="log-title">Journal de combat</span>
+              <span class="log-title mono log-count" style="opacity:.5">0</span>
+            </div>
+            <div class="log-entries"></div>
+          </div>
+        </div>
+
+        <!-- Zone centrale : canvas isométrique -->
+        <div class="arena-wrap">
+          <canvas id="game-canvas"></canvas>
+        </div>
+
+        <!-- Panneau droit : ennemis -->
+        <div class="side-panel right">
+          <div class="portraits-enemies"></div>
+        </div>
+
+      </div>
+
+      <!-- ═══════════════════════════════════════════════════════════
+           BARRE DE SORTS (bande basse)
+           ═══════════════════════════════════════════════════════════ -->
+      <div class="spellbar-wrap">
+        <div class="spellbar">
+
+          <!-- PA -->
+          <div class="pa-indicator">
+            <span class="v ap mono">6</span>
+            <span class="l">PA</span>
+          </div>
+          <!-- PM -->
+          <div class="pa-indicator">
+            <span class="v mp mono">3</span>
+            <span class="l">PM</span>
           </div>
 
-          <div class="hud-vsep"></div>
-
-          <!-- Fin de tour -->
-          <button class="hud-end-turn" title="Terminer le tour">
-            <span class="hud-end-turn-label">Fin de tour</span>
-            <span class="hud-end-turn-key">F</span>
+          <!-- Coup d'épée -->
+          <button class="spell" data-spell-id="coup-epee" title="Coup d'épée — 3 PA">
+            <span class="spell-icon">⚔️</span>
+            <span class="spell-cost mono">3</span>
+            <span class="spell-key mono">A</span>
+            <div class="hs-cd hidden">0</div>
+            <div class="spell-tooltip">
+              <div class="spell-tt-name">Coup d'épée</div>
+              <div class="spell-tt-meta">
+                <span>PA <b>3</b></span><span>Portée <b>1</b></span><span><b>Physique</b></span>
+              </div>
+              <div class="spell-tt-desc">Frappe rapide au corps-à-corps. Inflige des dégâts physiques.</div>
+            </div>
           </button>
 
-        </div><!-- /.hud-inner -->
-        <div class="hud-hint" aria-live="polite">Clic case bleue = déplacer</div>
-      </div><!-- /.hud-spellbar -->
+          <!-- Tir à l'arc -->
+          <button class="spell" data-spell-id="tir-arc" title="Tir à l'arc — 4 PA">
+            <span class="spell-icon">🏹</span>
+            <span class="spell-cost mono">4</span>
+            <span class="spell-key mono">Z</span>
+            <div class="hs-cd hidden">0</div>
+            <div class="spell-tooltip">
+              <div class="spell-tt-name">Tir à l'arc</div>
+              <div class="spell-tt-meta">
+                <span>PA <b>4</b></span><span>Portée <b>2–5</b></span><span><b>Tir</b></span>
+              </div>
+              <div class="spell-tt-desc">Tir à distance. Requiert une ligne de vue dégagée.</div>
+            </div>
+          </button>
 
-    </div><!-- /.canvas-wrapper -->
+          <!-- Charge -->
+          <button class="spell" data-spell-id="charge" title="Charge — 2 PA">
+            <span class="spell-icon">💨</span>
+            <span class="spell-cost mono">2</span>
+            <span class="spell-key mono">E</span>
+            <div class="hs-cd hidden">0</div>
+            <div class="spell-tooltip">
+              <div class="spell-tt-name">Charge</div>
+              <div class="spell-tt-meta">
+                <span>PA <b>2</b></span><span>Portée <b>1–3</b></span><span><b>Physique</b></span>
+              </div>
+              <div class="spell-tt-desc">Fonce en ligne droite vers l'ennemi et inflige des dégâts d'impact.</div>
+            </div>
+          </button>
+
+          <!-- Fin de tour -->
+          <button class="end-turn-btn">
+            <span>Fin de tour</span>
+            <span class="label-sub">F</span>
+          </button>
+
+        </div><!-- /.spellbar -->
+        <div class="hud-hint" aria-live="polite">Clic case bleue = déplacer</div>
+      </div><!-- /.spellbar-wrap -->
+
+    </div><!-- /.combat-app -->
 
     <script type="module" src="/src/client/main.ts"></script>
   </body>
