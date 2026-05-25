@@ -46,14 +46,15 @@ export function screenToGrid(screen: ScreenPos, origin: ScreenPos): Position {
 }
 
 /**
- * Calcule l'origine (case 0,0 → pixel) pour centrer une grille dans un canvas.
+ * Calcule l'origine (case 0,0 → pixel) pour centrer une grille dans un espace de rendu.
  * L'origine est le sommet du losange (0,0), pas le centre de la grille.
+ * Prend les dimensions CSS (pas les dimensions internes DPR-scalées).
  */
-export function computeOrigin(gridW: number, gridH: number, canvas: HTMLCanvasElement): ScreenPos {
+export function computeOrigin(gridW: number, gridH: number, width: number, height: number): ScreenPos {
   const halfH = TILE_HEIGHT / 2
   return {
-    screenX: canvas.width / 2,
+    screenX: width / 2,
     // Centre vertical : la grille mesure (W+H-2)*halfH du centre (0,0) au centre (W-1,H-1).
-    screenY: (canvas.height - (gridW + gridH - 2) * halfH) / 2,
+    screenY: (height - (gridW + gridH - 2) * halfH) / 2,
   }
 }

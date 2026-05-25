@@ -45,7 +45,33 @@ let gameState: GameState = {
 
 const canvas = document.getElementById('game-canvas') as HTMLCanvasElement
 const ctx    = canvas.getContext('2d')!
-const origin = computeOrigin(GRID_W, GRID_H, canvas)
+
+// Taille CSS courante et ratio de densité — mis à jour à chaque resize.
+let dpr    = 1
+let cssW   = 0
+let cssH   = 0
+let origin = { screenX: 0, screenY: 0 }
+
+/**
+ * Appelé au démarrage et à chaque resize de fenêtre.
+ * Ajuste la résolution interne du canvas (attributs width/height) pour coller
+ * à sa taille CSS × devicePixelRatio (rendu net sur écrans haute densité),
+ * recalcule l'origine isométrique, puis relance le rendu.
+ */
+function handleResize(): void {
+  const rect    = canvas.getBoundingClientRect()
+  const newDpr  = window.devicePixelRatio || 1
+  const newCssW = rect.width
+  const newCssH = rect.height
+  if (newCssW === 0 || newCssH === 0) return
+  dpr  = newDpr
+  cssW = newCssW
+  cssH = newCssH
+  canvas.width  = Math.round(cssW * dpr)
+  canvas.height = Math.round(cssH * dpr)
+  origin = computeOrigin(GRID_W, GRID_H, cssW, cssH)
+  render()
+}
 
 // ---------------------------------------------------------------------------
 // Références DOM du HUD HTML (cachées une fois au démarrage)
@@ -69,12 +95,6 @@ const SPELL_COUP_EPEE  = 'coup-epee'
 const SPELL_TIR_ARC    = 'tir-arc'
 const SPELL_CHARGE     = 'charge'
 const AI_STEP_DELAY_MS = 500  // pause entre chaque action IA (visible à l'écran)
-
-// Zones des boutons dans le canvas (coordonnées pixels).
-const COUP_EPEE_BTN = { x:  16, y: 56, w: 140, h: 22 }
-const TIR_ARC_BTN   = { x: 164, y: 56, w: 130, h: 22 }
-const CHARGE_BTN    = { x: 302, y: 56, w: 105, h: 22 }
-const END_TURN_BTN  = { x: 414, y: 56, w: 100, h: 22 }
 
 let mode:          UIMode  = 'move'
 let activeSpellId: string  = SPELL_COUP_EPEE  // sort actif quand mode === 'spell'
@@ -388,8 +408,11 @@ function animationLoop(now: number): void {
 }
 
 function render(): void {
+  // Applique l'échelle DPR : tout ce qui est dessiné ensuite utilise des coordonnées
+  // CSS (pixels logiques), quel que soit le devicePixelRatio.
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
   ctx.fillStyle = '#0f0f1a'
-  ctx.fillRect(0, 0, canvas.width, canvas.height)
+  ctx.fillRect(0, 0, cssW, cssH)
 
   renderGrid(ctx, gameState.grid, origin)
 
@@ -415,7 +438,6 @@ function render(): void {
   const flashingEntities  = getFlashingEntities(now)
   renderEntities(ctx, visualEntities, origin, entityDirections, flashingEntities)
   renderDamageNumbers(ctx, getActiveDamageNumbers(now), visualEntities, origin)
-  renderHUD(ctx, currentEntity())
   renderOverlay()
   updateHudDOM()
 }
@@ -425,7 +447,7 @@ function renderOverlay(): void {
 
   // Voile semi-transparent par-dessus la scène.
   ctx.fillStyle = 'rgba(0, 0, 0, 0.65)'
-  ctx.fillRect(0, 0, canvas.width, canvas.height)
+  ctx.fillRect(0, 0, cssW, cssH)
 
   const isVictory = gameState.status === 'victory'
   ctx.textAlign    = 'center'
@@ -433,11 +455,11 @@ function renderOverlay(): void {
 
   ctx.font      = 'bold 52px monospace'
   ctx.fillStyle = isVictory ? '#00ff88' : '#ff4455'
-  ctx.fillText(isVictory ? 'Victoire !' : 'Defaite...', canvas.width / 2, canvas.height / 2 - 20)
+  ctx.fillText(isVictory ? 'Victoire !' : 'Defaite...', cssW / 2, cssH / 2 - 20)
 
   ctx.font      = '16px monospace'
   ctx.fillStyle = '#888888'
-  ctx.fillText('Rechargez la page pour rejouer', canvas.width / 2, canvas.height / 2 + 36)
+  ctx.fillText('Rechargez la page pour rejouer', cssW / 2, cssH / 2 + 36)
 
   // Réinitialiser l'alignement pour les autres draws.
   ctx.textAlign    = 'left'
@@ -456,72 +478,6 @@ function computeHintText(entity: Entity): string {
   }
   if (cdActive > 0) return `En recharge : ${cdActive} tour(s)`
   return canCast ? 'Clic case orange = lancer' : 'PA insuffisants'
-}
-
-function renderHUD(ctx: CanvasRenderingContext2D, entity: Entity): void {
-  const pad  = 16
-  const barW = 120
-  const barH = 8
-
-  ctx.font         = 'bold 13px monospace'
-  ctx.textBaseline = 'top'
-
-  // Barre PM
-  ctx.fillStyle = '#aaaaaa'
-  ctx.fillText('PM', pad, pad)
-  ctx.fillStyle = '#1a1a2e'
-  ctx.fillRect(pad + 30, pad, barW, barH)
-  ctx.fillStyle = '#56cfe1'
-  ctx.fillRect(pad + 30, pad, barW * (entity.mp / entity.maxMp), barH)
-  ctx.fillStyle = '#ffffff'
-  ctx.fillText(`${entity.mp} / ${entity.maxMp}`, pad + 30 + barW + 8, pad - 1)
-
-  // Barre PA
-  ctx.fillStyle = '#aaaaaa'
-  ctx.fillText('PA', pad, pad + 20)
-  ctx.fillStyle = '#1a1a2e'
-  ctx.fillRect(pad + 30, pad + 20, barW, barH)
-  ctx.fillStyle = '#e9c46a'
-  ctx.fillRect(pad + 30, pad + 20, barW * (entity.ap / entity.maxAp), barH)
-  ctx.fillStyle = '#ffffff'
-  ctx.fillText(`${entity.ap} / ${entity.maxAp}`, pad + 30 + barW + 8, pad + 19)
-
-  // Boutons de sort (désactivés pendant le tour ennemi)
-  ctx.font      = '11px monospace'
-  ctx.lineWidth = 1.5
-  for (const { id, btn, label } of [
-    { id: SPELL_COUP_EPEE, btn: COUP_EPEE_BTN, label: "Coup d'epee (3 PA)" },
-    { id: SPELL_TIR_ARC,   btn: TIR_ARC_BTN,   label: "Tir a l'arc (4 PA)" },
-    { id: SPELL_CHARGE,    btn: CHARGE_BTN,    label: 'Charge (2 PA)' },
-  ]) {
-    const cd         = entity.cooldowns?.[id] ?? 0
-    const onCooldown = cd > 0
-    const isDisabled = aiTurnActive || onCooldown
-    const isActive   = !isDisabled && mode === 'spell' && activeSpellId === id
-    // Quand en recharge : remplace "(N PA)" par "[cd: N]" pour ne pas confondre avec le coût PA.
-    const displayLabel = onCooldown ? label.split(' (')[0] + ` [cd: ${cd}]` : label
-    ctx.fillStyle   = isDisabled ? '#141414' : (isActive ? '#5a2a14' : '#1e2e1e')
-    ctx.fillRect(btn.x, btn.y, btn.w, btn.h)
-    ctx.strokeStyle = isDisabled ? '#444444' : (isActive ? '#ff7832' : '#56cfe1')
-    ctx.strokeRect(btn.x, btn.y, btn.w, btn.h)
-    ctx.fillStyle   = isDisabled ? '#555555' : (isActive ? '#ff9a5c' : '#cccccc')
-    ctx.fillText(displayLabel, btn.x + 6, btn.y + 6)
-  }
-
-  // Bouton "Fin de tour" (désactivé pendant le tour ennemi)
-  ctx.fillStyle   = aiTurnActive ? '#141414' : '#1e1020'
-  ctx.fillRect(END_TURN_BTN.x, END_TURN_BTN.y, END_TURN_BTN.w, END_TURN_BTN.h)
-  ctx.strokeStyle = aiTurnActive ? '#444444' : '#c77dff'
-  ctx.lineWidth   = 1.5
-  ctx.strokeRect(END_TURN_BTN.x, END_TURN_BTN.y, END_TURN_BTN.w, END_TURN_BTN.h)
-  ctx.fillStyle = aiTurnActive ? '#555555' : '#c77dff'
-  ctx.font      = '11px monospace'
-  ctx.fillText('Fin de tour', END_TURN_BTN.x + 8, END_TURN_BTN.y + 6)
-
-  // Texte d'aide contextuel
-  ctx.fillStyle = '#888888'
-  ctx.font      = '10px monospace'
-  ctx.fillText(computeHintText(entity), pad, COUP_EPEE_BTN.y + COUP_EPEE_BTN.h + 6)
 }
 
 /**
@@ -603,27 +559,6 @@ canvas.addEventListener('click', (e) => {
   const clickX = e.clientX - rect.left
   const clickY = e.clientY - rect.top
 
-  // Clic sur un bouton de sort canvas.
-  for (const { id, btn } of [
-    { id: SPELL_COUP_EPEE, btn: COUP_EPEE_BTN },
-    { id: SPELL_TIR_ARC,   btn: TIR_ARC_BTN },
-    { id: SPELL_CHARGE,    btn: CHARGE_BTN },
-  ]) {
-    if (clickX >= btn.x && clickX <= btn.x + btn.w && clickY >= btn.y && clickY <= btn.y + btn.h) {
-      selectSpell(id)
-      return
-    }
-  }
-
-  // Clic sur le bouton "Fin de tour" canvas.
-  if (
-    clickX >= END_TURN_BTN.x && clickX <= END_TURN_BTN.x + END_TURN_BTN.w &&
-    clickY >= END_TURN_BTN.y && clickY <= END_TURN_BTN.y + END_TURN_BTN.h
-  ) {
-    doEndTurn()
-    return
-  }
-
   const pos = screenToGrid({ screenX: clickX, screenY: clickY }, origin)
   if (!getCell(gameState.grid, pos)) return
 
@@ -700,4 +635,6 @@ hudEndTurnBtn?.addEventListener('click', () => {
 initEntityDirections()
 refreshReachable()
 refreshSpellRange()
-spritesReady.then(() => render())
+handleResize()                                     // dimensionne le canvas et premier rendu
+new ResizeObserver(handleResize).observe(canvas)   // recalcul à chaque resize de fenêtre
+spritesReady.then(() => render())                  // relance quand les sprites sont chargés
