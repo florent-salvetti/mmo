@@ -87,6 +87,7 @@ const rightTabBtn     = document.querySelector<HTMLButtonElement>('.mobile-tab.r
 const mobileBackdrop  = document.querySelector<HTMLElement>('.mobile-backdrop')
 const leftPanel       = document.querySelector<HTMLElement>('.side-panel.left')
 const rightPanel      = document.querySelector<HTMLElement>('.side-panel.right')
+const combatAppEl     = document.querySelector<HTMLElement>('.combat-app')
 
 // ---------------------------------------------------------------------------
 // État de l'UI
@@ -151,9 +152,24 @@ function directionFromPath(path: Position[]): PlayerDirection {
   return directionTo(path[path.length - 2]!, path[path.length - 1]!)
 }
 
-/** Bascule le mode de jeu et déclenche un rendu. */
+/** Bascule le mode de jeu. En exploration : coupe le combat. En combat : relance le tour. */
 function setGameMode(newMode: GameMode): void {
+  if (gameMode === newMode) return
   gameMode = newMode
+  if (newMode === 'exploration') {
+    stopTimer()
+    aiTurnActive = false
+    mode = 'move'
+    combatAppEl?.classList.add('mode-exploration')
+  } else {
+    combatAppEl?.classList.remove('mode-exploration')
+    refreshReachable()
+    refreshSpellRange()
+    if (gameState.status === 'ongoing') {
+      if (isCurrentEntityEnemy()) startAITurn()  // [MODE COMBAT]
+      else startTurnTimer()                      // [MODE COMBAT]
+    }
+  }
   render()
 }
 
@@ -625,8 +641,8 @@ function render(): void {
 
   renderGrid(ctx, gameState.grid, origin)
 
-  // [MODE COMBAT] Les surlignages ne s'affichent qu'en mode combat et pendant le tour du joueur.
-  if (!aiTurnActive) {
+  // [MODE COMBAT] Surlignages uniquement en mode combat et pendant le tour du joueur.
+  if (gameMode === 'combat' && !aiTurnActive) {
     if (mode === 'move') {
       renderHighlights(ctx, reachable, origin, hoveredPos)  // [MODE COMBAT]
     } else {
@@ -646,7 +662,9 @@ function render(): void {
   const visualEntities    = getVisualEntities()
   const flashingEntities  = getFlashingEntities(now)
   renderCubesAndEntities(ctx, gameState.grid, visualEntities, origin, entityDirections, flashingEntities)
-  renderDamageNumbers(ctx, getActiveDamageNumbers(now), visualEntities, origin)  // [MODE COMBAT]
+  if (gameMode === 'combat') {
+    renderDamageNumbers(ctx, getActiveDamageNumbers(now), visualEntities, origin)  // [MODE COMBAT]
+  }
   renderModeIndicator()
   renderOverlay()
   updateHudDOM()  // [MODE COMBAT]
@@ -753,6 +771,44 @@ function canvasPoint(e: MouseEvent): { screenX: number; screenY: number } {
   }
 }
 
+/**
+ * Déplacement libre en mode exploration : le joueur marche vers la case cliquée
+ * sans limite de PM ni mécanique de tour. Réutilise le BFS et l'animation existants.
+ */
+function handleExplorationClick(pos: Position): void {
+  const player = gameState.entities.find(e => e.team === 'player')
+  if (!player) return
+  const cell = getCell(gameState.grid, pos)
+  if (!cell || !cell.walkable) return
+  if (pos.x === player.position.x && pos.y === player.position.y) return
+
+  const blockedForAnim = new Set(
+    gameState.entities
+      .filter(e => e.id !== player.id && e.hp > 0)
+      .map(e => `${e.position.x},${e.position.y}`),
+  )
+  const path = buildPath(gameState.grid, player.position, pos, blockedForAnim)
+
+  // Vérifier que chaque pas est adjacent (sinon buildPath a renvoyé son fallback = pas de chemin réel)
+  const isValidPath = path.every((p, i) => {
+    if (i === 0) return true
+    const prev = path[i - 1]!
+    return Math.abs(p.x - prev.x) + Math.abs(p.y - prev.y) === 1
+  })
+  if (!isValidPath) return
+
+  // Téléporter la position dans l'état (pas de reducer, pas de coût en PM)
+  gameState = {
+    ...gameState,
+    entities: gameState.entities.map(e =>
+      e.id === player.id ? { ...e, position: pos } : e
+    ),
+  }
+  entityDirections.set(player.id, directionFromPath(path))
+  startAnimation(player.id, path, performance.now())
+  startRenderLoop()
+}
+
 canvas.addEventListener('mousemove', (e) => {
   if (aiTurnActive) return
   const newPos = screenToGrid(canvasPoint(e), origin)
@@ -772,6 +828,12 @@ canvas.addEventListener('click', (e) => {
 
   const pos = screenToGrid(canvasPoint(e), origin)
   if (!getCell(gameState.grid, pos)) return
+
+  // Mode exploration : déplacement libre, pas de mécanique de combat
+  if (gameMode === 'exploration') {
+    handleExplorationClick(pos)
+    return
+  }
 
   if (mode === 'move') {
     const prevState      = gameState
@@ -915,6 +977,7 @@ function loadMap(def: MapDefinition): void {
 
   // Réinitialiser l'UI
   gameMode      = 'combat'
+  combatAppEl?.classList.remove('mode-exploration')
   mode          = 'move'
   activeSpellId = SPELL_COUP_EPEE
   hoveredPos    = null
